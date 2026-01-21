@@ -1,0 +1,138 @@
+generator client {
+  provider      = "prisma-client-js"
+  binaryTargets = ["native", "linux-musl-openssl-3.0.x"]
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  NURSE_TRIAGE
+  CASHIER
+  DOCTOR
+  ADMIN
+  CONSULTOR
+}
+
+enum TriageColor {
+  VERDE
+  AMARILLO
+  ROJO
+}
+
+enum Sex {
+  M
+  F
+  O
+}
+
+enum PaymentStatus {
+  PENDING
+  PAID
+}
+
+model User {
+  id           Int      @id @default(autoincrement())
+  name         String
+  email        String   @unique
+  passwordHash String
+  role         Role
+  cedula       String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  triagesAsNurse    TriageRecord[] @relation("NurseTriage")
+  notesAsDoctor     MedicalNote[]  @relation("DoctorNote")
+  paymentsAsCashier Payment[]      @relation("CashierPayment")
+}
+
+model Patient {
+  id         Int       @id @default(autoincrement())
+  expediente String?   @unique
+  fullName   String
+  birthDate  DateTime?
+  age        Int?
+  sex        Sex?
+  mayaHabla  Boolean   @default(false)
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+
+  triages TriageRecord[]
+}
+
+model TriageRecord {
+  id        Int @id @default(autoincrement())
+  patientId Int
+  nurseId   Int
+
+  motivoUrgencia String
+  triageAt       DateTime @default(now())
+
+  // Semáforo por parámetro
+  appearance  TriageColor
+  respiration TriageColor
+  circulation TriageColor
+
+  // Clasificación final (verde/amarillo/rojo)
+  classification TriageColor
+
+  // Campos administrativos
+  paidStatus PaymentStatus @default(PENDING)
+
+  patient Patient @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  nurse   User    @relation("NurseTriage", fields: [nurseId], references: [id])
+
+  payment     Payment?
+  medicalNote MedicalNote?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([triageAt])
+  @@index([classification])
+  @@index([paidStatus])
+}
+
+model Payment {
+  id        Int @id @default(autoincrement())
+  triageId  Int @unique
+  cashierId Int
+
+  status PaymentStatus @default(PAID)
+  paidAt DateTime      @default(now())
+  amount Decimal?      @db.Decimal(10, 2)
+
+  triage  TriageRecord @relation(fields: [triageId], references: [id], onDelete: Cascade)
+  cashier User         @relation("CashierPayment", fields: [cashierId], references: [id])
+
+  createdAt DateTime @default(now())
+}
+
+model MedicalNote {
+  id       Int @id @default(autoincrement())
+  triageId Int @unique
+  doctorId Int
+
+  consultationStartedAt DateTime?
+  // Nota médica
+  padecimientoActual    String    @db.Text
+  antecedentes          String    @db.Text
+  exploracionFisica     String    @db.Text
+  estudiosParaclinicos  String    @db.Text
+  diagnostico           String    @db.Text
+  diagnosisPrincipal    String?
+  planTratamiento       String    @db.Text
+  vigilancia            Json?
+  contrarreferencia     String    @db.Text
+  pronostico            String    @db.Text
+
+  triage TriageRecord @relation(fields: [triageId], references: [id], onDelete: Cascade)
+  doctor User         @relation("DoctorNote", fields: [doctorId], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([consultationStartedAt])
+}
