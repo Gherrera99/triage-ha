@@ -1,10 +1,12 @@
+// api/src/routes/reports.routes.ts
 import { Router } from "express";
-import { auth } from "../middleware/auth";
+import { requireAuth } from "../middleware/auth";
 import { requireRole } from "../middleware/requireRole";
 import { reportsCtrl } from "../controllers/reports.ctrl";
 
 const r = Router();
 
-r.get("/admin-excel", auth, requireRole("ADMIN"), reportsCtrl.getAdminReport);
+// Excel (por rango). Para un día, mandas startDate=endDate
+r.get("/admin-excel", requireAuth, requireRole(["ADMIN", "CONSULTOR"]), reportsCtrl.getAdminReport);
 
 export default r;

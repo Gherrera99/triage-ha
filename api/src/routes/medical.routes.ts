@@ -1,3 +1,4 @@
+//api/src/routes/medical.routes.ts
 import { Router } from "express";
 import { requireAuth, requireRole } from "../middleware/auth";
 import { startConsultation, upsertNote, getPdf } from "../controllers/medical.ctrl";

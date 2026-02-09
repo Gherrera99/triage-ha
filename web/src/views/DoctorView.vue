@@ -1,12 +1,20 @@
 <script setup lang="ts">
-import { onMounted } from "vue";
+//web/src/views/DoctorView.vue
+import { onMounted, onBeforeUnmount } from "vue";
 import { useDoctorStore } from "../stores/doctor";
+import { useSocket } from "../composables/useSocket";
 
 const d = useDoctorStore();
+const { connect } = useSocket();
 
 onMounted(async () => {
-  await d.fetchQueue();
-  await d.initRealtime();
+  connect();            // ✅ asegura socket conectado
+  d.initRealtime();     // ✅ listeners 1 sola vez
+  await d.fetchQueue(); // ✅ pega a /triage/doctor/waiting
+});
+
+onBeforeUnmount(() => {
+  d.disposeRealtime();  // ✅ evita duplicados si vuelves a entrar
 });
 </script>
 

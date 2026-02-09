@@ -1,39 +1,22 @@
-import { io, Socket } from "socket.io-client";
-import { useAuthStore } from "../stores/auth";
-import { useTriageStore } from "../stores/triage";
-
-let socket: Socket | null = null;
+// web/src/composables/useSocket.ts
+import { getSocket, connectSocket, disconnectSocket } from "../services/socket";
 
 export function useSocket() {
-    const auth = useAuthStore();
-    const triage = useTriageStore();
+    const socket = getSocket();
 
     function connect() {
-        if (!auth.token) return;
-        if (socket) return;
-
-        socket = io(import.meta.env.VITE_API_URL, {
-            auth: { token: auth.token },
-            transports: ["websocket"],
-        });
-
-        socket.on("triage:new", (payload) => {
-            triage.onTriageNew(payload);
-        });
-
-        socket.on("payment:paid", (payload) => {
-            triage.onPaymentPaid(payload);
-        });
-
-        socket.on("consultation:started", (payload) => {
-            triage.onConsultationStarted(payload);
-        });
+        return connectSocket();
     }
 
     function disconnect() {
-        socket?.disconnect();
-        socket = null;
+        return disconnectSocket();
     }
 
-    return { connect, disconnect };
+    // helper: te devuelve el "off" para limpiar listeners
+    function on(event: string, handler: (...args: any[]) => void) {
+        socket.on(event, handler);
+        return () => socket.off(event, handler);
+    }
+
+    return { socket, connect, disconnect, on };
 }

@@ -1,34 +1,54 @@
 import { defineStore } from "pinia";
 import { http } from "../api/http";
 
-export type CashierItem = {
+export type TriageColor = "VERDE" | "AMARILLO" | "ROJO";
+export type PaymentStatus = "PENDING" | "PAID";
+
+export type CashierQueueRow = {
     id: number;
-    triageTimestamp: string;
-    classification: "GREEN" | "YELLOW" | "RED";
-    patientFullName: string;
+    triageAt: string;
     motivoUrgencia: string;
-    nurse: { fullName: string };
+    classification: TriageColor;
+    paidStatus: PaymentStatus;
+
+    patient: {
+        expediente: string | null;
+        fullName: string;
+        age: number | null;
+        sex: "M" | "F" | "O" | null;
+        mayaHabla: boolean;
+        responsibleName: string | null;
+    };
+
+    nurse?: { name: string } | null;
 };
 
 export const useCashierStore = defineStore("cashier", {
     state: () => ({
-        queue: [] as CashierItem[],
+        rows: [] as CashierQueueRow[],
         loading: false,
+        paying: false,
     }),
+
     actions: {
         async fetchQueue() {
             this.loading = true;
             try {
-                const { data } = await http.get("/triage/cashier/queue");
-                // si quieres ocultar rojos en caja:
-                this.queue = data.filter((x: CashierItem) => x.classification !== "RED");
+                const { data } = await http.get("/triage/cashier-queue");
+                this.rows = data;
             } finally {
                 this.loading = false;
             }
         },
-        async markPaid(id: number, amount?: number) {
-            await http.post(`/triage/${id}/pay`, { amount: amount ?? null });
-            await this.fetchQueue();
+
+        async markPaid(triageId: number, amount: number | null) {
+            this.paying = true;
+            try {
+                await http.post(`/payments/${triageId}/pay`, { amount });
+                await this.fetchQueue();
+            } finally {
+                this.paying = false;
+            }
         },
     },
 });

@@ -49,15 +49,16 @@ model User {
 }
 
 model Patient {
-  id         Int       @id @default(autoincrement())
-  expediente String?   @unique
-  fullName   String
-  birthDate  DateTime?
-  age        Int?
-  sex        Sex?
-  mayaHabla  Boolean   @default(false)
-  createdAt  DateTime  @default(now())
-  updatedAt  DateTime  @updatedAt
+  id              Int       @id @default(autoincrement())
+  expediente      String?   @unique
+  fullName        String
+  birthDate       DateTime?
+  age             Int?
+  sex             Sex?
+  mayaHabla       Boolean   @default(false)
+  responsibleName String? // ✅ nuevo
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
 
   triages TriageRecord[]
 }
@@ -77,6 +78,20 @@ model TriageRecord {
 
   // Clasificación final (verde/amarillo/rojo)
   classification TriageColor
+
+  // ✅ nuevos - signos vitales
+  weightKg        Float?
+  heightCm        Float?
+  temperatureC    Float?
+  heartRate       Int?
+  respiratoryRate Int?
+  bloodPressure   String?
+
+  // ✅ nuevos - flags + lugar
+  hadPriorCareSamePathology Boolean @default(false)
+  priorCarePlace            String?
+  hasReferral               Boolean @default(false)
+  referralPlace             String?
 
   // Campos administrativos
   paidStatus PaymentStatus @default(PENDING)

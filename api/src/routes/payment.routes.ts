@@ -1,7 +1,8 @@
 import { Router } from "express";
 import { requireAuth, requireRole } from "../middleware/auth";
-import { markPaid } from "../controllers/payment.ctrl";
+import { payTriage } from "../controllers/payment.ctrl";
 
 export const paymentRouter = Router();
 
-paymentRouter.patch("/:triageId/paid", requireAuth, requireRole(["CASHIER"]), markPaid);
+// Marcar un triage como pagado (Caja)
+paymentRouter.post("/:triageId/pay", requireAuth, requireRole(["CASHIER"]), payTriage);
