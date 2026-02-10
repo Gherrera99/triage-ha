@@ -76,6 +76,7 @@ export async function payTriage(req: Request, res: Response) {
 
         // (opcional) si ya lo usas en DoctorView, lo dejamos
         emitToRole("DOCTOR", "payment:paid", result);
+        emitToRole("NURSE_TRIAGE", "payment:paid", result); // ✅ para que enfermería se actualice
 
         res.json(result);
     } catch (e: any) {

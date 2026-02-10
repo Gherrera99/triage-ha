@@ -37,7 +37,10 @@ export type NurseTriageRow = {
 
     paidStatus: "PENDING" | "PAID";
     payment?: { paidAt: string } | null;
-    medicalNote?: { consultationStartedAt: string | null } | null;
+    medicalNote?: {
+        consultationStartedAt: string | null;
+        consultationFinishedAt?: string | null
+    } | null;
 };
 
 export const useTriageNurseStore = defineStore("triageNurse", {

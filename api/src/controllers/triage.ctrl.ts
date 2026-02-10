@@ -31,6 +31,14 @@ function worstColor(a: TriageColor, b: TriageColor, c: TriageColor): TriageColor
     return [a, b, c].sort((x, y) => rank[x] - rank[y])[2];
 }
 
+function todayRange() {
+    const start = new Date();
+    start.setHours(0, 0, 0, 0);
+    const end = new Date();
+    end.setHours(23, 59, 59, 999);
+    return { start, end };
+}
+
 export async function createTriage(req: Request, res: Response) {
     try {
         const nurse = (req as any).user;
@@ -147,8 +155,13 @@ export async function createTriage(req: Request, res: Response) {
 }
 
 export async function listQueueForCashier(req: Request, res: Response) {
+    const { start, end } = todayRange();
+
     const rows = await prisma.triageRecord.findMany({
-        where: { paidStatus: "PENDING" },
+        where: {
+            paidStatus: "PENDING",
+            triageAt: { gte: start, lte: end },
+        },
         orderBy: [{ classification: "desc" }, { triageAt: "asc" }],
         include: { patient: true, nurse: { select: { name: true } } },
         take: 200,
@@ -157,8 +170,13 @@ export async function listQueueForCashier(req: Request, res: Response) {
 }
 
 export async function listQueueForDoctor(req: Request, res: Response) {
+    const { start, end } = todayRange();
+
     const rows = await prisma.triageRecord.findMany({
-        where: { paidStatus: "PAID" },
+        where: {
+            paidStatus: "PAID",
+            triageAt: { gte: start, lte: end }, // ✅ solo hoy
+        },
         orderBy: [{ classification: "desc" }, { triageAt: "asc" }],
         include: {
             patient: true,
@@ -174,9 +192,17 @@ export async function listQueueForDoctor(req: Request, res: Response) {
 export async function listRecentForNurse(req: Request, res: Response) {
     const nurse = (req as any).user;
 
+    const now = new Date();
+    const start = new Date(now); start.setHours(0, 0, 0, 0);
+    const end = new Date(now); end.setHours(23, 59, 59, 999);
+
     const rows = await prisma.triageRecord.findMany({
-        where: { nurseId: nurse.id },
-        orderBy: { triageAt: "desc" },
+        where: {
+            nurseId: nurse.id,
+            triageAt: { gte: start, lte: end },
+        },
+        // ✅ prioridad (ROJO > AMARILLO > VERDE) y por llegada (más antiguo primero)
+        orderBy: [{ classification: "desc" }, { triageAt: "asc" }],
         take: 200,
         include: {
             patient: true,
@@ -197,10 +223,13 @@ export async function revalueTriage(req: Request, res: Response) {
 
     const existing = await prisma.triageRecord.findFirst({
         where: { id, nurseId: nurse.id },
-        include: { patient: true },
+        include: { patient: true, medicalNote: true },
     });
 
     if (!existing) return res.status(404).json({ error: "Triage no encontrado" });
+    if (existing.medicalNote?.consultationStartedAt) {
+        return res.status(409).json({ error: "No se puede revalorar: consulta ya iniciada por el médico" });
+    }
 
     const appearance = b.appearance ? toColor(b.appearance) : existing.appearance;
     const respiration = b.respiration ? toColor(b.respiration) : existing.respiration;

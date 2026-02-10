@@ -1,16 +1,23 @@
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from "vue";
+import { computed, onMounted, reactive, ref, onBeforeUnmount } from "vue";
 import { useTriageNurseStore, type TriageColor, type NurseTriageRow } from "../stores/triageNurse";
+import { useSocket } from "../composables/useSocket";
 
 const s = useTriageNurseStore();
 
 type Tab = "NEW" | "LIST";
 const tab = ref<Tab>("NEW");
 
+type StatusTab = "ESPERA" | "CONSULTA" | "ATENDIDO";
+const statusTab = ref<StatusTab>("ESPERA");
+
+const { socket } = useSocket();
+let offA: any, offB: any;
+
 const form = reactive({
   // paciente
   expediente: "",
-  motivoUrgencia: "",
+  motivoUrgencia: "CONSULTA",
   patientFullName: "",
   patientAge: null as number | null,
   sex: "M" as "M" | "F" | "O",
@@ -42,6 +49,16 @@ const classificationPreview = computed<TriageColor>(() => {
   return [form.appearance, form.respiration, form.circulation].sort((a, b) => rank[a] - rank[b])[2];
 });
 
+function statusOf(r: NurseTriageRow): StatusTab {
+  if (r.medicalNote?.consultationFinishedAt) return "ATENDIDO";
+  if (r.medicalNote?.consultationStartedAt) return "CONSULTA";
+  return "ESPERA";
+}
+
+const filteredByStatus = computed(() => {
+  return filtered.value.filter((r) => statusOf(r) === statusTab.value);
+});
+
 function badge(c: TriageColor) {
   return c === "ROJO" ? "bg-red-600" : c === "AMARILLO" ? "bg-yellow-400 text-black" : "bg-green-600";
 }
@@ -70,7 +87,7 @@ async function saveNew() {
 
   const payload = {
     // el backend actual acepta body directo
-    motivoUrgencia: form.motivoUrgencia.trim(),
+    motivoUrgencia: "CONSULTA",
     appearance: form.appearance,
     respiration: form.respiration,
     circulation: form.circulation,
@@ -107,7 +124,7 @@ async function saveNew() {
 
     // reset mínimo
     form.expediente = "";
-    form.motivoUrgencia = "";
+    form.motivoUrgencia = "CONSULTA";
     form.patientFullName = "";
     form.patientAge = null;
     form.sex = "M";
@@ -229,6 +246,20 @@ async function submitRevalue() {
 
 onMounted(async () => {
   await s.fetchRecent();
+
+  const onStarted = async () => s.fetchRecent();
+  const onFinished = async () => s.fetchRecent();
+
+  socket.on("consultation:started", onStarted);
+  socket.on("consultation:finished", onFinished);
+
+  offA = () => socket.off("consultation:started", onStarted);
+  offB = () => socket.off("consultation:finished", onFinished);
+});
+
+onBeforeUnmount(() => {
+  offA?.();
+  offB?.();
 });
 </script>
 
@@ -281,7 +312,10 @@ onMounted(async () => {
 
           <div>
             <label class="text-sm font-medium">Motivo de urgencia *</label>
-            <input v-model="form.motivoUrgencia" class="w-full border rounded-xl p-2" />
+            <input v-model="form.motivoUrgencia"
+                   class="w-full border rounded-xl p-2"
+                   disabled
+            />
           </div>
 
           <div>
@@ -416,11 +450,26 @@ onMounted(async () => {
           </div>
 
           <div class="text-sm text-gray-500">
-            {{ filtered.length }} registros
+            {{ filteredByStatus.length }} registros
           </div>
         </div>
 
         <div class="overflow-auto border rounded-2xl">
+          <div class="flex gap-2 mb-3">
+            <button class="px-3 py-2 rounded-xl border text-sm"
+                    :class="statusTab==='ESPERA' ? 'bg-blue-50 border-blue-200 text-blue-700' : 'hover:bg-gray-50'"
+                    @click="statusTab='ESPERA'">EN ESPERA</button>
+
+            <button class="px-3 py-2 rounded-xl border text-sm"
+                    :class="statusTab==='CONSULTA' ? 'bg-blue-50 border-blue-200 text-blue-700' : 'hover:bg-gray-50'"
+                    @click="statusTab='CONSULTA'">EN CONSULTA</button>
+
+            <button class="px-3 py-2 rounded-xl border text-sm"
+                    :class="statusTab==='ATENDIDO' ? 'bg-blue-50 border-blue-200 text-blue-700' : 'hover:bg-gray-50'"
+                    @click="statusTab='ATENDIDO'">ATENDIDO</button>
+          </div>
+
+
           <table class="w-full text-sm">
             <thead class="bg-gray-50">
             <tr class="text-left border-b">
@@ -435,7 +484,7 @@ onMounted(async () => {
             </tr>
             </thead>
             <tbody>
-            <tr v-for="r in filtered" :key="r.id" class="border-b">
+            <tr v-for="r in filteredByStatus" :key="r.id" class="border-b">
               <td class="py-2 px-3">{{ r.id }}</td>
               <td class="py-2 px-3">{{ fmtMerida(r.triageAt) }}</td>
               <td class="py-2 px-3">{{ r.patient.expediente || "-" }}</td>
@@ -462,12 +511,16 @@ onMounted(async () => {
                   </span>
               </td>
               <td class="py-2 px-3">
-                <button class="px-3 py-1 rounded-xl border text-xs hover:bg-gray-50" @click="openRevalue(r)">
+                <button
+                    class="px-3 py-1 rounded-xl border text-xs hover:bg-gray-50 disabled:opacity-50"
+                    :disabled="statusOf(r) !== 'ESPERA'"
+                    @click="openRevalue(r)"
+                >
                   Revalorar
                 </button>
               </td>
             </tr>
-            <tr v-if="!filtered.length">
+            <tr v-if="!filteredByStatus.length">
               <td colspan="8" class="py-6 text-center text-gray-500">Sin registros</td>
             </tr>
             </tbody>

@@ -61,6 +61,9 @@ onBeforeUnmount(() => {
             <button class="px-3 py-2 rounded-lg bg-gray-900 text-white" @click="d.openPdf">
               Imprimir PDF
             </button>
+            <button class="px-3 py-2 rounded-lg bg-rose-600 text-white" @click="d.finishConsultation">
+              Finalizar
+            </button>
           </div>
         </div>
 

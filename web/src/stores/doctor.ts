@@ -40,6 +40,9 @@ export const useDoctorStore = defineStore("doctor", {
             s.on("triage:new", refetch);
             s.on("triage:updated", refetch);   // ✅ revaloración + pago emiten esto
             s.on("payment:paid", refetch);     // opcional pero útil
+            s.on("triage:updated", () => this.fetchQueue());
+            s.on("consultation:started", () => this.fetchQueue());
+            s.on("consultation:finished", () => this.fetchQueue());
 
             this._rtOff = [
                 () => s.off("triage:new", refetch),
@@ -123,5 +126,11 @@ export const useDoctorStore = defineStore("doctor", {
             // cleanup
             setTimeout(() => URL.revokeObjectURL(url), 60_000);
         },
+
+        async finishConsultation() {
+            if (!this.current) return;
+            await api.post(`/medical/${this.current.id}/finish`);
+            await this.fetchQueue();
+        }
     },
 });

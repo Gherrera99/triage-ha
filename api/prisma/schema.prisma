@@ -130,18 +130,19 @@ model MedicalNote {
   triageId Int @unique
   doctorId Int
 
-  consultationStartedAt DateTime?
+  consultationStartedAt  DateTime?
+  consultationFinishedAt DateTime? // ✅ nuevo
   // Nota médica
-  padecimientoActual    String    @db.Text
-  antecedentes          String    @db.Text
-  exploracionFisica     String    @db.Text
-  estudiosParaclinicos  String    @db.Text
-  diagnostico           String    @db.Text
-  diagnosisPrincipal    String?
-  planTratamiento       String    @db.Text
-  vigilancia            Json?
-  contrarreferencia     String    @db.Text
-  pronostico            String    @db.Text
+  padecimientoActual     String    @db.Text
+  antecedentes           String    @db.Text
+  exploracionFisica      String    @db.Text
+  estudiosParaclinicos   String    @db.Text
+  diagnostico            String    @db.Text
+  diagnosisPrincipal     String?
+  planTratamiento        String    @db.Text
+  vigilancia             Json?
+  contrarreferencia      String    @db.Text
+  pronostico             String    @db.Text
 
   triage TriageRecord @relation(fields: [triageId], references: [id], onDelete: Cascade)
   doctor User         @relation("DoctorNote", fields: [doctorId], references: [id])
