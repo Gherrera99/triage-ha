@@ -284,21 +284,80 @@ export async function revalueTriage(req: Request, res: Response) {
 }
 
 export async function listWaitingForDoctor(req: Request, res: Response) {
+    const { start, end } = todayRange();
     const rows = await prisma.triageRecord.findMany({
         where: {
-            // aún sin nota (o sin inicio de consulta)
-            medicalNote: { is: null },
+            paidStatus: "PAID",
+            triageAt: { gte: start, lt: end },
+            medicalNote: null, // nadie la tomó aún
         },
         orderBy: [{ classification: "desc" }, { triageAt: "asc" }],
-        include: {
-            patient: true,
-            nurse: { select: { name: true } },
-            payment: true,
-            medicalNote: true,
+        include: { patient: true, nurse: { select: { name: true } } },
+        take: 300,
+    });
+    res.json(rows);
+}
+
+export async function listMyConsultations(req: Request, res: Response) {
+    const doctor = (req as any).user;
+    const { start, end } = todayRange();
+
+    const rows = await prisma.triageRecord.findMany({
+        where: {
+            paidStatus: "PAID",
+            triageAt: { gte: start, lt: end },
+            medicalNote: {
+                is: {
+                    doctorId: doctor.id,
+                    consultationFinishedAt: null,
+                    consultationStartedAt: { not: null },
+                },
+            },
         },
-        take: 200,
+        orderBy: [{ classification: "desc" }, { triageAt: "asc" }],
+        include: { patient: true, nurse: { select: { name: true } }, medicalNote: true },
+        take: 300,
     });
 
     res.json(rows);
 }
 
+export async function listMyAttended(req: Request, res: Response) {
+    const doctor = (req as any).user;
+    const { start, end } = todayRange();
+
+    const rows = await prisma.triageRecord.findMany({
+        where: {
+            paidStatus: "PAID",
+            triageAt: { gte: start, lt: end },
+            medicalNote: {
+                is: {
+                    doctorId: doctor.id,
+                    consultationFinishedAt: { not: null },
+                },
+            },
+        },
+        orderBy: [{ triageAt: "desc" }],
+        include: { patient: true, nurse: { select: { name: true } }, medicalNote: true },
+        take: 300,
+    });
+
+    res.json(rows);
+}
+
+export async function getDoctorTriageDetail(req: Request, res: Response) {
+    const triageId = Number(req.params.triageId);
+
+    const triage = await prisma.triageRecord.findUnique({
+        where: { id: triageId },
+        include: {
+            patient: true,
+            nurse: { select: { id: true, name: true } },
+            payment: { include: { cashier: { select: { id: true, name: true } } } },
+            medicalNote: { include: { doctor: { select: { id: true, name: true, cedula: true } } } },
+        },
+    });
+
+    if (!triage) return res.status(404).json({ error: "No existe triage" });
+    res.json(triage);
+}

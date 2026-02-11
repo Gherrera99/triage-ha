@@ -1,4 +1,5 @@
 <script setup lang="ts">
+//web/src/components/MedicalNoteForm.vue
 import { reactive, watch } from "vue";
 
 const props = defineProps<{

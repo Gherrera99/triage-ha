@@ -7,7 +7,10 @@ import {
     listQueueForDoctor,
     listRecentForNurse,
     revalueTriage,
-    listWaitingForDoctor
+    listWaitingForDoctor,
+    listMyConsultations,
+    listMyAttended,
+    getDoctorTriageDetail
 } from "../controllers/triage.ctrl";
 
 export const triageRouter = Router();
@@ -18,3 +21,6 @@ triageRouter.get("/doctor-queue", requireAuth, requireRole(["DOCTOR"]), listQueu
 triageRouter.get("/nurse/recent", requireAuth, requireRole(["NURSE_TRIAGE"]), listRecentForNurse);
 triageRouter.put("/:id/revalue", requireAuth, requireRole(["NURSE_TRIAGE"]), revalueTriage);
 triageRouter.get("/doctor/waiting", requireAuth, requireRole(["DOCTOR"]), listWaitingForDoctor);
+triageRouter.get("/doctor/consulting", requireAuth, requireRole("DOCTOR"), listMyConsultations);
+triageRouter.get("/doctor/attended", requireAuth, requireRole("DOCTOR"), listMyAttended);
+triageRouter.get("/doctor/:triageId/detail", requireAuth, requireRole("DOCTOR"), getDoctorTriageDetail);

@@ -4,6 +4,8 @@ import { computed, onMounted, watch } from "vue";
 import { useRouter, RouterView, RouterLink } from "vue-router";
 import { useAuthStore } from "./stores/auth";
 import { useSocket } from "./composables/useSocket";
+import DoctorAlertOverlay from "./components/DoctorAlertOverlay.vue";
+
 
 const auth = useAuthStore();
 const router = useRouter();
@@ -87,5 +89,8 @@ function logout() {
     <main class="max-w-7xl mx-auto">
       <RouterView />
     </main>
+
+    <DoctorAlertOverlay v-if="role === 'DOCTOR'" />
+
   </div>
 </template>

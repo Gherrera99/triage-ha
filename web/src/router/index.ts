@@ -5,6 +5,8 @@ import CashierView from "../views/CashierView.vue";
 import TriageNurseView from "../views/TriageNurseView.vue";
 import AdminDashboard from "../views/AdminDashboard.vue";
 import AdminUsersView from "../views/AdminUsersView.vue";
+import DoctorDashboardView from "../views/DoctorDashboardView.vue";
+import DoctorConsultView from "../views/DoctorConsultView.vue";
 import { useAuthStore } from "../stores/auth";
 
 function homeByRole(role?: string) {
@@ -31,7 +33,8 @@ const router = createRouter({
 
         { path: "/triage", component: TriageNurseView, meta: { role: "NURSE_TRIAGE" } },
         { path: "/cashier", component: CashierView, meta: { role: "CASHIER" } },
-        { path: "/doctor", component: DoctorView, meta: { role: "DOCTOR" } },
+        { path: "/doctor", component: DoctorDashboardView, meta: { role: "DOCTOR" } },
+        { path: "/doctor/consult/:id", component: DoctorConsultView, meta: { role: "DOCTOR" } },
 
         { path: "/admin/reports", component: AdminDashboard, meta: { role: "ADMIN" } },
         { path: "/admin/users", component: AdminUsersView, meta: { role: "ADMIN" } },
