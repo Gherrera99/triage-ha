@@ -2,6 +2,8 @@
 import { computed, onMounted, reactive, ref, onBeforeUnmount } from "vue";
 import { useTriageNurseStore, type TriageColor, type NurseTriageRow } from "../stores/triageNurse";
 import { useSocket } from "../composables/useSocket";
+import TriageGuideTable from "../components/TriageGuideTable.vue";
+
 
 const s = useTriageNurseStore();
 
@@ -65,6 +67,10 @@ function badge(c: TriageColor) {
 
 function slaMinutes(c: TriageColor) {
   return c === "VERDE" ? 120 : c === "AMARILLO" ? 60 : 0;
+}
+
+function payLabel(v: "PENDING" | "PAID") {
+  return v === "PAID" ? "PAGADO" : "PENDIENTE";
 }
 
 function fmtMerida(iso: string) {
@@ -156,17 +162,27 @@ async function saveNew() {
 const q = ref("");
 const filtered = computed(() => {
   const term = q.value.trim().toLowerCase();
-  if (!term) return s.rows;
-  return s.rows.filter((r) => {
-    const p = r.patient;
-    return (
-        String(r.id).includes(term) ||
-        (p.fullName || "").toLowerCase().includes(term) ||
-        (p.expediente || "").toLowerCase().includes(term) ||
-        (r.motivoUrgencia || "").toLowerCase().includes(term)
-    );
-  });
+
+  const rank: Record<TriageColor, number> = { VERDE: 1, AMARILLO: 2, ROJO: 3 };
+
+  return s.rows
+      .filter((r) => {
+        if (!term) return true;
+        const p = r.patient;
+        return (
+            String(r.id).includes(term) ||
+            (p.fullName || "").toLowerCase().includes(term) ||
+            (p.expediente || "").toLowerCase().includes(term) ||
+            (r.motivoUrgencia || "").toLowerCase().includes(term)
+        );
+      })
+      .sort((a, b) => {
+        const byClass = rank[b.classification] - rank[a.classification]; // desc
+        if (byClass !== 0) return byClass;
+        return new Date(a.triageAt).getTime() - new Date(b.triageAt).getTime(); // asc (más viejo primero)
+      });
 });
+
 
 const showRevalue = ref(false);
 const re = reactive({
@@ -247,15 +263,27 @@ async function submitRevalue() {
 onMounted(async () => {
   await s.fetchRecent();
 
-  const onStarted = async () => s.fetchRecent();
-  const onFinished = async () => s.fetchRecent();
+  const refresh = () => s.fetchRecent();
 
-  socket.on("consultation:started", onStarted);
-  socket.on("consultation:finished", onFinished);
+  socket.on("triage:new", refresh);
+  socket.on("triage:updated", refresh);
+  socket.on("payment:paid", refresh);
+  socket.on("consultation:started", refresh);
+  socket.on("consultation:finished", refresh);
 
-  offA = () => socket.off("consultation:started", onStarted);
-  offB = () => socket.off("consultation:finished", onFinished);
+  offA = () => {
+    socket.off("triage:new", refresh);
+    socket.off("triage:updated", refresh);
+    socket.off("payment:paid", refresh);
+    socket.off("consultation:started", refresh);
+    socket.off("consultation:finished", refresh);
+  };
 });
+
+onBeforeUnmount(() => {
+  offA?.();
+});
+
 
 onBeforeUnmount(() => {
   offA?.();
@@ -348,6 +376,8 @@ onBeforeUnmount(() => {
             <span class="text-sm">Habla Maya</span>
           </div>
         </div>
+
+        <TriageGuideTable class="mt-6" />
 
         <div class="mt-6 grid grid-cols-3 gap-4">
           <div class="border rounded-2xl p-4">
@@ -507,7 +537,7 @@ onBeforeUnmount(() => {
                       class="text-xs px-2 py-1 rounded-full"
                       :class="r.paidStatus === 'PAID' ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'"
                   >
-                    {{ r.paidStatus }}
+                    {{ payLabel(r.paidStatus) }}
                   </span>
               </td>
               <td class="py-2 px-3">
