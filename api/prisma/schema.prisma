@@ -141,6 +141,8 @@ model MedicalNote {
   diagnosisPrincipal     String?
   planTratamiento        String    @db.Text
   vigilancia             Json?
+  contraRefFollowUp      Boolean   @default(false)
+  contraRefWhen          String?
   contrarreferencia      String    @db.Text
   pronostico             String    @db.Text
 

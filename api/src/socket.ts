@@ -8,8 +8,23 @@ type JwtPayload = { userId: number };
 export let io: Server;
 
 export function initSocket(server: HttpServer) {
+    const allowlist = (process.env.CORS_ORIGIN ?? "")
+        .split(",")
+        .map((s) => s.trim())
+        .filter(Boolean);
+
     io = new Server(server, {
-        cors: { origin: process.env.CORS_ORIGIN, credentials: true },
+        cors: {
+            origin: (origin, cb) => {
+                if (!origin) return cb(null, true);
+                if (allowlist.includes(origin)) return cb(null, true);
+                if (/^http:\/\/192\.168\.\d+\.\d+:5173$/.test(origin)) return cb(null, true);
+                return cb(new Error(`CORS Socket bloqueado para: ${origin}`));
+            },
+            credentials: true,
+            methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+            allowedHeaders: ["Content-Type", "Authorization"],
+        },
     });
 
     io.use(async (socket, next) => {

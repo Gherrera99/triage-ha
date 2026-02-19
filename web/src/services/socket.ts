@@ -4,11 +4,23 @@ import { useAuthStore } from "../stores/auth";
 
 let socket: Socket | null = null;
 
+function resolveServerUrl() {
+    // 1) prioridad a WS_URL (si lo defines)
+    const fromEnv =
+        import.meta.env.VITE_WS_URL ||
+        import.meta.env.VITE_API_URL;
+
+    if (fromEnv) return fromEnv;
+
+    // 2) fallback dinámico: mismo host donde abriste el frontend, puerto 3000
+    return `${window.location.protocol}//${window.location.hostname}:3000`;
+}
+
 export function getSocket() {
     if (!socket) {
-        socket = io(import.meta.env.VITE_API_URL || "http://localhost:3000", {
+        socket = io(resolveServerUrl(), {
             autoConnect: false,
-            transports: ["websocket"],
+            transports: ["websocket"], // si te falla en alguna red, quita esto para permitir polling
             auth: {},
         });
     }
@@ -20,7 +32,8 @@ export function connectSocket() {
     const s = getSocket();
     if (s.connected) return s;
 
-    s.auth = { token: auth.token }; // 👈 backend debe leer handshake.auth.token
+    // backend lee handshake.auth.token
+    s.auth = { token: auth.token };
     s.connect();
     return s;
 }

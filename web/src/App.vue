@@ -34,12 +34,16 @@ const menu = computed(() => {
   if (role.value === "NURSE_TRIAGE") return [{ to: "/triage", label: "Triage" }];
   if (role.value === "CASHIER") return [{ to: "/cashier", label: "Caja" }];
   if (role.value === "DOCTOR") return [{ to: "/doctor", label: "Urgencias" }];
-  if (role.value === "ADMIN" || role.value === "CONSULTOR") {
+  if (role.value === "ADMIN") {
     return [
-      { to: "/admin/reports", label: "Reportes" },
-      ...(role.value === "ADMIN" ? [{ to: "/admin/users", label: "Usuarios" }] : []),
+      { to: "/triage", label: "Triage" },
+      { to: "/cashier", label: "Caja" },
+      { to: "/doctor", label: "Urgencias" },
+      { to: "/admin", label: "Administrador" },
+      { to: "/admin/users", label: "Usuarios" },
     ];
   }
+
   return [];
 });
 

@@ -88,7 +88,6 @@ export const useDoctorStore = defineStore("doctor", {
 
             const s = getSocket();
 
-            const onPaid = () => this.fetchWaiting();
             const onStarted = () => { this.fetchWaiting(); this.fetchConsulting(); };
             const onFinished = () => { this.fetchConsulting(); this.fetchAttended(); };
 
@@ -231,6 +230,11 @@ export const useDoctorStore = defineStore("doctor", {
             setTimeout(() => URL.revokeObjectURL(url), 60_000);
         },
 
+        async fetchTriageDetail(triageId: number) {
+            const { data } = await api.get(`/triage/doctor/${triageId}/detail`);
+            return data;
+        },
+
         sortWaiting() {
             const rank: Record<string, number> = { VERDE: 1, AMARILLO: 2, ROJO: 3 };
             this.waiting.sort((a: any, b: any) => {
@@ -330,5 +334,12 @@ export const useDoctorStore = defineStore("doctor", {
             }
         },
 
+        focusAlert(triageId: number) {
+            const idx = this.alertQueue.findIndex((a: any) => a.id === triageId);
+            if (idx <= 0) return;
+            const [item] = this.alertQueue.splice(idx, 1);
+            this.alertQueue.unshift(item);
+            this.startAlertSound(item.classification); // cambia patrón al nuevo “actual”
+        },
     },
 });

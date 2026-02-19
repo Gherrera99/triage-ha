@@ -31,12 +31,12 @@ const router = createRouter({
     routes: [
         { path: "/login", component: LoginView },
 
-        { path: "/triage", component: TriageNurseView, meta: { role: "NURSE_TRIAGE" } },
-        { path: "/cashier", component: CashierView, meta: { role: "CASHIER" } },
-        { path: "/doctor", component: DoctorDashboardView, meta: { role: "DOCTOR" } },
-        { path: "/doctor/consult/:id", component: DoctorConsultView, meta: { role: "DOCTOR" } },
+        { path: "/triage", component: TriageNurseView, meta: { role: ["NURSE_TRIAGE", "ADMIN"] } },
+        { path: "/cashier", component: CashierView, meta: { role: ["CASHIER", "ADMIN"] } },
+        { path: "/doctor", component: DoctorDashboardView, meta: { role: ["DOCTOR", "ADMIN"] } },
+        { path: "/doctor/consult/:id", component: DoctorConsultView, meta: { role: ["DOCTOR", "ADMIN"] } },
 
-        { path: "/admin/reports", component: AdminDashboard, meta: { role: "ADMIN" } },
+        { path: "/admin/reports", component: AdminDashboard, meta: { role: ["ADMIN", "CONSULTOR"] } },
         { path: "/admin/users", component: AdminUsersView, meta: { role: "ADMIN" } },
 
         { path: "/", redirect: "/login" },
@@ -48,7 +48,7 @@ router.beforeEach((to) => {
     const auth = useAuthStore();
     auth.init();
 
-    // ✅ si ya estás logueado y vas a /login, mándalo a su home
+    // si ya estás logueado y vas a /login, mándalo a su home
     if (to.path === "/login" && auth.token && auth.user) {
         return homeByRole(auth.user.role);
     }
@@ -57,10 +57,16 @@ router.beforeEach((to) => {
 
     if (!auth.token || !auth.user) return "/login";
 
-    const requiredRole = to.meta.role as string | undefined;
-    if (requiredRole && auth.user.role !== requiredRole) {
-        return homeByRole(auth.user.role);
-    }
+    const required = to.meta.role as string | string[] | undefined;
+    if (!required) return true;
+
+    // ✅ ADMIN como superusuario (opcional, pero práctico)
+    if (auth.user.role === "ADMIN") return true;
+
+    // ✅ role puede ser string o lista
+    const allowed = Array.isArray(required) ? required.includes(auth.user.role) : auth.user.role === required;
+
+    if (!allowed) return homeByRole(auth.user.role);
 
     return true;
 });
