@@ -1,4 +1,3 @@
-//web/src/stores/triageNurse.ts
 import { defineStore } from "pinia";
 import { http } from "../api/http";
 
@@ -8,6 +7,8 @@ export type NurseTriageRow = {
     id: number;
     triageAt: string;
     motivoUrgencia: string;
+    observaciones?: string | null;
+
     appearance: TriageColor;
     respiration: TriageColor;
     circulation: TriageColor;
@@ -25,11 +26,17 @@ export type NurseTriageRow = {
     hasReferral: boolean;
     referralPlace?: string | null;
 
+    closedAt?: string | null;
+    closedReason?: string | null;
+    refusedPayment?: boolean;
+    noShow?: boolean;
+
     patient: {
         id: number;
         expediente?: string | null;
         fullName: string;
-        age?: number | null;
+        birthDate?: string | null;
+        age?: string | null;
         sex?: string | null;
         mayaHabla: boolean;
         responsibleName?: string | null;
@@ -39,7 +46,7 @@ export type NurseTriageRow = {
     payment?: { paidAt: string } | null;
     medicalNote?: {
         consultationStartedAt: string | null;
-        consultationFinishedAt?: string | null
+        consultationFinishedAt?: string | null;
     } | null;
 };
 
@@ -55,7 +62,6 @@ export const useTriageNurseStore = defineStore("triageNurse", {
             this.saving = true;
             try {
                 const { data } = await http.post("/triage", payload);
-                // refresco simple
                 await this.fetchRecent();
                 return data;
             } finally {
@@ -88,6 +94,15 @@ export const useTriageNurseStore = defineStore("triageNurse", {
                 this.saving = false;
             }
         },
+
+        async openOwnReportPdf() {
+            const { data } = await http.get("/triage/nurse/report/pdf", {
+                responseType: "blob",
+            });
+
+            const url = URL.createObjectURL(new Blob([data], { type: "application/pdf" }));
+            window.open(url, "_blank");
+            setTimeout(() => URL.revokeObjectURL(url), 60000);
+        },
     },
 });
-

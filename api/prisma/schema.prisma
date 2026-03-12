@@ -33,6 +33,13 @@ enum PaymentStatus {
   PAID
 }
 
+enum CloseReason {
+  CASHIER_FINISHED // cierre por caja (motivos no-consulta)
+  REFUSED_PAYMENT // no quiso pagar
+  NO_SHOW // no se presentó al llamado (doctor)
+  DOCTOR_FINISHED // finalizado por doctor
+}
+
 model User {
   id           Int      @id @default(autoincrement())
   name         String
@@ -46,6 +53,9 @@ model User {
   triagesAsNurse    TriageRecord[] @relation("NurseTriage")
   notesAsDoctor     MedicalNote[]  @relation("DoctorNote")
   paymentsAsCashier Payment[]      @relation("CashierPayment")
+
+  // ✅ para NO-SHOW (doctor marca no-show en triageRecord)
+  noShowsAsDoctor TriageRecord[] @relation("DoctorNoShow")
 }
 
 model Patient {
@@ -53,10 +63,10 @@ model Patient {
   expediente      String?   @unique
   fullName        String
   birthDate       DateTime?
-  age             Int?
+  age             String?
   sex             Sex?
   mayaHabla       Boolean   @default(false)
-  responsibleName String? // ✅ nuevo
+  responsibleName String?
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
 
@@ -71,6 +81,9 @@ model TriageRecord {
   motivoUrgencia String
   triageAt       DateTime @default(now())
 
+  // ✅ nuevo: observaciones de enfermería (siempre visible)
+  observaciones String? @db.Text
+
   // Semáforo por parámetro
   appearance  TriageColor
   respiration TriageColor
@@ -79,7 +92,7 @@ model TriageRecord {
   // Clasificación final (verde/amarillo/rojo)
   classification TriageColor
 
-  // ✅ nuevos - signos vitales
+  // Signos vitales
   weightKg        Float?
   heightCm        Float?
   temperatureC    Float?
@@ -87,14 +100,26 @@ model TriageRecord {
   respiratoryRate Int?
   bloodPressure   String?
 
-  // ✅ nuevos - flags + lugar
+  // Flags + lugar
   hadPriorCareSamePathology Boolean @default(false)
   priorCarePlace            String?
   hasReferral               Boolean @default(false)
   referralPlace             String?
 
-  // Campos administrativos
+  // Pago
   paidStatus PaymentStatus @default(PENDING)
+
+  // ✅ cierres (termina el flujo sin médico)
+  closedAt       DateTime?
+  closedReason   CloseReason?
+  refusedPayment Boolean      @default(false)
+
+  // ✅ no-show (doctor)
+  noShow         Boolean   @default(false)
+  noShowReason   String?   @db.Text
+  noShowAt       DateTime?
+  noShowDoctorId Int?
+  noShowDoctor   User?     @relation("DoctorNoShow", fields: [noShowDoctorId], references: [id])
 
   patient Patient @relation(fields: [patientId], references: [id], onDelete: Cascade)
   nurse   User    @relation("NurseTriage", fields: [nurseId], references: [id])
@@ -108,6 +133,9 @@ model TriageRecord {
   @@index([triageAt])
   @@index([classification])
   @@index([paidStatus])
+  @@index([closedAt])
+  @@index([refusedPayment])
+  @@index([noShow])
 }
 
 model Payment {
@@ -117,7 +145,9 @@ model Payment {
 
   status PaymentStatus @default(PAID)
   paidAt DateTime      @default(now())
-  amount Decimal?      @db.Decimal(10, 2)
+
+  // ✅ ya no lo capturan, lo dejamos opcional para no romper migraciones previas
+  amount Decimal? @db.Decimal(10, 2)
 
   triage  TriageRecord @relation(fields: [triageId], references: [id], onDelete: Cascade)
   cashier User         @relation("CashierPayment", fields: [cashierId], references: [id])
@@ -131,20 +161,27 @@ model MedicalNote {
   doctorId Int
 
   consultationStartedAt  DateTime?
-  consultationFinishedAt DateTime? // ✅ nuevo
-  // Nota médica
-  padecimientoActual     String    @db.Text
-  antecedentes           String    @db.Text
-  exploracionFisica      String    @db.Text
-  estudiosParaclinicos   String    @db.Text
-  diagnostico            String    @db.Text
-  diagnosisPrincipal     String?
-  planTratamiento        String    @db.Text
-  vigilancia             Json?
-  contraRefFollowUp      Boolean   @default(false)
-  contraRefWhen          String?
-  contrarreferencia      String    @db.Text
-  pronostico             String    @db.Text
+  consultationFinishedAt DateTime?
+
+  padecimientoActual   String  @db.Text
+  antecedentes         String  @db.Text
+  exploracionFisica    String  @db.Text
+  estudiosParaclinicos String  @db.Text
+  diagnostico          String  @db.Text
+  diagnosisPrincipal   String?
+  planTratamiento      String  @db.Text
+
+  // ✅ antes era Json checkboxes; ahora será texto libre (campo libre)
+  vigilanciaTexto String? @db.Text
+
+  // contrarreferencia (si/no + tiempo)
+  contraRefFollowUp Boolean @default(false)
+  contraRefWhen     String?
+
+  // (si lo estabas usando en algún lado, lo dejamos; si no, después lo quitamos)
+  contrarreferencia String @db.Text
+
+  pronostico String @db.Text
 
   triage TriageRecord @relation(fields: [triageId], references: [id], onDelete: Cascade)
   doctor User         @relation("DoctorNote", fields: [doctorId], references: [id])

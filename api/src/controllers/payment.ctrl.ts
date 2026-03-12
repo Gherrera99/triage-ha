@@ -3,6 +3,53 @@ import { Request, Response } from "express";
 import { prisma } from "../prisma";
 import { emitToRole } from "../socket";
 
+function normalizeExpediente(v: any): string | null {
+    const s = String(v ?? "").trim();
+    if (!s) return null;
+    const up = s.toUpperCase();
+
+    // acepta variaciones/typos
+    if (up === "SIN EXPEDIENTE" || up === "SIN EXPENDIENTE") return null;
+
+    return s;
+}
+
+function isConsulta(motivo: any): boolean {
+    const s = String(motivo ?? "").trim().toUpperCase();
+    return s === "CONSULTA";
+}
+
+async function applyExpedienteIfProvided(tx: any, triageId: number, expedienteRaw: any) {
+    const expediente = normalizeExpediente(expedienteRaw);
+    if (!expediente) return;
+
+    const triage = await tx.triageRecord.findUnique({
+        where: { id: triageId },
+        include: { patient: true },
+    });
+    if (!triage) return;
+
+    // si ya lo tiene igual, nada
+    if ((triage.patient?.expediente ?? "").toLowerCase() === expediente.toLowerCase()) return;
+
+    // si el expediente ya existe en otro paciente, re-vincula el triage a ese patient
+    const other = await tx.patient.findUnique({ where: { expediente } });
+
+    if (other && other.id !== triage.patientId) {
+        await tx.triageRecord.update({
+            where: { id: triageId },
+            data: { patientId: other.id },
+        });
+        return;
+    }
+
+    // si no existe, lo asigna al paciente actual
+    await tx.patient.update({
+        where: { id: triage.patientId },
+        data: { expediente },
+    });
+}
+
 export async function payTriage(req: Request, res: Response) {
     const cashier = (req as any).user;
     const triageId = Number(req.params.triageId);
@@ -11,15 +58,7 @@ export async function payTriage(req: Request, res: Response) {
         return res.status(400).json({ error: "triageId inválido" });
     }
 
-    const rawAmount = req.body?.amount;
-    const amount =
-        rawAmount === "" || rawAmount === undefined || rawAmount === null
-            ? null
-            : Number(rawAmount);
-
-    if (amount !== null && (Number.isNaN(amount) || amount < 0)) {
-        return res.status(400).json({ error: "amount inválido" });
-    }
+    const expediente = req.body?.expediente;
 
     try {
         const result = await prisma.$transaction(async (tx) => {
@@ -32,16 +71,36 @@ export async function payTriage(req: Request, res: Response) {
                 },
             });
 
-            if (!triage) {
-                throw Object.assign(new Error("No existe el triage"), { status: 404 });
+            if (!triage) throw Object.assign(new Error("No existe el triage"), { status: 404 });
+
+            // ✅ permitir actualizar expediente incluso si ya estaba pagado
+            await applyExpedienteIfProvided(tx, triageId, expediente);
+
+            // idempotente: si ya está pagado, solo regresa actualizado (con paciente quizá ya re-vinculado)
+            if (triage.paidStatus === "PAID") {
+                return tx.triageRecord.findUnique({
+                    where: { id: triageId },
+                    include: { patient: true, nurse: { select: { id: true, name: true } }, payment: true },
+                });
             }
 
-            // idempotente: si ya está pagado, regresamos tal cual
-            if (triage.paidStatus === "PAID") return triage;
+            const now = new Date();
+            const consulta = isConsulta(triage.motivoUrgencia);
 
+            // ✅ pagar
             await tx.triageRecord.update({
                 where: { id: triageId },
-                data: { paidStatus: "PAID" },
+                data: {
+                    paidStatus: "PAID",
+
+                    // ✅ si NO es consulta => cierra flujo en caja
+                    ...(consulta
+                        ? {}
+                        : {
+                            closedAt: now,
+                            closedReason: "CASHIER_FINISHED",
+                        }),
+                },
             });
 
             await tx.payment.upsert({
@@ -50,13 +109,14 @@ export async function payTriage(req: Request, res: Response) {
                     triageId,
                     cashierId: cashier.id,
                     status: "PAID",
-                    amount,
+                    amount: null, // ✅ ya no se captura
+                    paidAt: now,
                 },
                 update: {
                     cashierId: cashier.id,
                     status: "PAID",
-                    amount,
-                    paidAt: new Date(),
+                    amount: null, // ✅ ya no se captura
+                    paidAt: now,
                 },
             });
 
@@ -70,17 +130,64 @@ export async function payTriage(req: Request, res: Response) {
             });
         });
 
-        // ✅ eventos para refresco en vivo
+        // ✅ eventos para refresco en vivo (caja y enfermería siempre)
         emitToRole("CASHIER", "triage:updated", result);
-        emitToRole("DOCTOR", "triage:updated", result);
+        emitToRole("NURSE_TRIAGE", "triage:updated", result);
 
-        // (opcional) si ya lo usas en DoctorView, lo dejamos
-        emitToRole("DOCTOR", "payment:paid", result);
-        emitToRole("NURSE_TRIAGE", "payment:paid", result); // ✅ para que enfermería se actualice
+        // ✅ SOLO si es consulta (si no, NO debe llegar a médico)
+        if (isConsulta(result?.motivoUrgencia) && !result?.closedAt) {
+            emitToRole("DOCTOR", "triage:updated", result);
+            emitToRole("DOCTOR", "payment:paid", result);
+        }
 
         res.json(result);
     } catch (e: any) {
         const status = e?.status || 500;
         res.status(status).json({ error: e?.message || "Error al cobrar" });
+    }
+}
+
+// ✅ NUEVO: caja marca "No quiso pagar" => termina flujo y no llega a médico
+export async function refusePayment(req: Request, res: Response) {
+    const cashier = (req as any).user;
+    const triageId = Number(req.params.triageId);
+
+    if (!triageId || Number.isNaN(triageId)) {
+        return res.status(400).json({ error: "triageId inválido" });
+    }
+
+    try {
+        const result = await prisma.$transaction(async (tx) => {
+            const triage = await tx.triageRecord.findUnique({
+                where: { id: triageId },
+                include: { patient: true, nurse: { select: { id: true, name: true } } },
+            });
+            if (!triage) throw Object.assign(new Error("No existe el triage"), { status: 404 });
+
+            // si ya está cerrado, idempotente
+            if (triage.closedAt || triage.refusedPayment) return triage;
+
+            const now = new Date();
+
+            return tx.triageRecord.update({
+                where: { id: triageId },
+                data: {
+                    refusedPayment: true,
+                    closedAt: now,
+                    closedReason: "REFUSED_PAYMENT",
+                    // paidStatus se queda PENDING (no pagó)
+                },
+                include: { patient: true, nurse: { select: { id: true, name: true } }, payment: true },
+            });
+        });
+
+        emitToRole("CASHIER", "triage:updated", result);
+        emitToRole("NURSE_TRIAGE", "triage:updated", result);
+        // ❌ NO emitir a DOCTOR
+
+        res.json(result);
+    } catch (e: any) {
+        const status = e?.status || 500;
+        res.status(status).json({ error: e?.message || "Error marcando no pago" });
     }
 }

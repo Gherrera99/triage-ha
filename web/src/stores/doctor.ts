@@ -1,3 +1,4 @@
+// web/src/stores/doctor.ts
 import { defineStore } from "pinia";
 import { api } from "../services/api";
 import { getSocket } from "../services/socket";
@@ -12,47 +13,25 @@ const emptyNote = () => ({
     estudiosParaclinicos: "",
     diagnostico: "",
     planTratamiento: "",
-    vigilancia: null as string | null,         // guardaremos JSON string
-    contrarreferencia: "",                     // "NO" o "SI - <tiempo>"
-    pronostico: "",
 
-    // helpers UI (no van directo al backend)
+    // ✅ ahora texto libre
+    vigilanciaTexto: "",
+
+    // ✅ contrarreferencia real
     contraRefFollowUp: false,
     contraRefWhen: "",
-    vig: {
-        fiebre38: false,
-        convulsiones: false,
-        alteracionAlerta: false,
-        sangradoActivo: false,
-        deshidratacion: false,
-        vomitosFrecuentes: false,
-        irritabilidad: false,
-        llantoInconsolable: false,
-        dificultadRespiratoria: false,
-        choque: false,
-        deterioroNeurologico: false,
-    },
+
+    pronostico: "",
 });
 
-function packVigilancia(vig: any) {
-    return JSON.stringify(vig ?? {});
-}
-function unpackVigilancia(s: any) {
-    try { return s ? JSON.parse(s) : {}; } catch { return {}; }
-}
-function packContra(followUp: boolean, when: string) {
-    if (!followUp) return "NO";
-    const w = (when ?? "").trim();
-    return w ? `SI - ${w}` : "SI";
-}
-function unpackContra(s: string) {
-    const t = (s ?? "").toUpperCase();
-    if (!t) return { followUp: false, when: "" };
-    if (t.startsWith("SI")) {
-        const parts = (s ?? "").split("-");
-        return { followUp: true, when: (parts[1] ?? "").trim() };
-    }
-    return { followUp: false, when: "" };
+// ✅ fallback para registros viejos donde aún existía contrarreferencia string tipo "SI - 48 hrs"
+function parseContraLegacy(s: any) {
+    const raw = String(s ?? "").trim();
+    if (!raw) return { followUp: false, when: "" };
+    const up = raw.toUpperCase();
+    if (!up.startsWith("SI")) return { followUp: false, when: "" };
+    const parts = raw.split("-");
+    return { followUp: true, when: (parts[1] ?? "").trim() };
 }
 
 export const useDoctorStore = defineStore("doctor", {
@@ -73,12 +52,12 @@ export const useDoctorStore = defineStore("doctor", {
         _rtInited: false,
         _rtOff: [] as Array<() => void>,
 
+        // alertas
         alertQueue: [] as any[],
         _audioUnlocked: false,
         _audioCtx: null as AudioContext | null,
         _beepTimer: null as any,
         _notifiedIds: [] as number[],
-
     }),
 
     actions: {
@@ -88,21 +67,33 @@ export const useDoctorStore = defineStore("doctor", {
 
             const s = getSocket();
 
-            const onStarted = () => { this.fetchWaiting(); this.fetchConsulting(); };
-            const onFinished = () => { this.fetchConsulting(); this.fetchAttended(); };
+            const onStarted = () => {
+                this.fetchWaiting();
+                this.fetchConsulting();
+            };
+            const onFinished = () => {
+                this.fetchConsulting();
+                this.fetchAttended();
+            };
 
             const onPaid = (payload: any) => {
-                // payload normalmente trae triageRecord con patient/nurse/payment
-                // Solo alertar si entra a waiting (pagado y sin nota) y es del día
                 if (!payload?.id) return;
-                if (payload.paidStatus !== "PAID") return;
-                if (!this.isToday(payload.triageAt)) return;
 
-                // Si ya está en consulting/attended, ignorar
+                // ✅ si no es CONSULTA, no alertar (esos se cierran en caja)
+                const motivo = String(payload.motivoUrgencia ?? "").toUpperCase();
+                if (motivo !== "CONSULTA") return;
+
+                // ✅ si el backend ya lo cerró por alguna razón, no alertar
+                if (payload.closedAt || payload.refusedPayment || payload.noShow) return;
+
+                if (payload.paidStatus !== "PAID") return;
+
+                // ✅ NUEVO: 24h exactas (no “hoy”)
+                if (!this.isWithin24h(payload.triageAt)) return;
+
                 if (this.consulting.some((x: any) => x.id === payload.id)) return;
                 if (this.attended.some((x: any) => x.id === payload.id)) return;
 
-                // Meterlo a waiting si no existe
                 if (!this.waiting.some((x: any) => x.id === payload.id)) {
                     this.waiting.unshift(payload);
                     this.sortWaiting();
@@ -110,26 +101,23 @@ export const useDoctorStore = defineStore("doctor", {
 
                 this.enqueueAlert(payload);
 
-                // opcional: sincroniza con backend para evitar desfaces
                 this.fetchWaiting().then(() => this.sortWaiting()).catch(() => {});
             };
 
-            s.on("payment:paid", onPaid);
-            this._rtOff.push(() => s.off("payment:paid", onPaid));
+            const onTriageUpdated = () => {
+                if (this.tab === "WAITING") this.fetchWaiting();
+            };
 
+            s.on("payment:paid", onPaid);
             s.on("consultation:started", onStarted);
             s.on("consultation:finished", onFinished);
-
-            // por si revaloran antes de pagar (o ajustes)
-            s.on("triage:updated", () => {
-                if (this.tab === "WAITING") this.fetchWaiting();
-            });
+            s.on("triage:updated", onTriageUpdated);
 
             this._rtOff = [
                 () => s.off("payment:paid", onPaid),
                 () => s.off("consultation:started", onStarted),
                 () => s.off("consultation:finished", onFinished),
-                () => s.off("triage:updated", onPaid),
+                () => s.off("triage:updated", onTriageUpdated),
             ];
         },
 
@@ -141,15 +129,17 @@ export const useDoctorStore = defineStore("doctor", {
 
         async fetchWaiting() {
             const { data } = await api.get("/triage/doctor/waiting");
-            this.waiting = data;
+            // ✅ seguridad extra: aplicar 24h en front por si backend aún filtra por día
+            this.waiting = (data ?? []).filter((r: any) => this.isWithin24h(r.triageAt));
+            this.sortWaiting();
         },
         async fetchConsulting() {
             const { data } = await api.get("/triage/doctor/consulting");
-            this.consulting = data;
+            this.consulting = (data ?? []).filter((r: any) => this.isWithin24h(r.triageAt));
         },
         async fetchAttended() {
             const { data } = await api.get("/triage/doctor/attended");
-            this.attended = data;
+            this.attended = (data ?? []).filter((r: any) => this.isWithin24h(r.triageAt));
         },
 
         async refreshAll() {
@@ -169,10 +159,9 @@ export const useDoctorStore = defineStore("doctor", {
             const { data } = await api.get(`/triage/doctor/${triageId}/detail`);
             this.detail = data;
 
-            // hidratar note desde la nota existente si ya hay
             const n = data?.medicalNote;
             if (n) {
-                const contra = unpackContra(n.contrarreferencia ?? "");
+                const legacy = parseContraLegacy(n.contrarreferencia);
                 this.note = {
                     ...emptyNote(),
                     padecimientoActual: n.padecimientoActual ?? "",
@@ -181,12 +170,14 @@ export const useDoctorStore = defineStore("doctor", {
                     estudiosParaclinicos: n.estudiosParaclinicos ?? "",
                     diagnostico: n.diagnostico ?? "",
                     planTratamiento: n.planTratamiento ?? "",
-                    vigilancia: n.vigilancia ?? null,
-                    contrarreferencia: n.contrarreferencia ?? "",
+
+                    vigilanciaTexto: n.vigilanciaTexto ?? "",
+
+                    // ✅ usa campos nuevos, si vienen vacíos cae al legacy
+                    contraRefFollowUp: n.contraRefFollowUp ?? legacy.followUp,
+                    contraRefWhen: n.contraRefWhen ?? legacy.when,
+
                     pronostico: n.pronostico ?? "",
-                    contraRefFollowUp: contra.followUp,
-                    contraRefWhen: contra.when,
-                    vig: { ...emptyNote().vig, ...unpackVigilancia(n.vigilancia) },
                 };
             } else {
                 this.note = emptyNote();
@@ -208,8 +199,14 @@ export const useDoctorStore = defineStore("doctor", {
                 estudiosParaclinicos: this.note.estudiosParaclinicos,
                 diagnostico: this.note.diagnostico,
                 planTratamiento: this.note.planTratamiento,
-                vigilancia: packVigilancia(this.note.vig),
-                contrarreferencia: packContra(this.note.contraRefFollowUp, this.note.contraRefWhen),
+
+                // ✅ texto libre
+                vigilanciaTexto: this.note.vigilanciaTexto,
+
+                // ✅ contrarreferencia nueva
+                contraRefFollowUp: this.note.contraRefFollowUp,
+                contraRefWhen: this.note.contraRefWhen,
+
                 pronostico: this.note.pronostico,
             };
 
@@ -244,35 +241,31 @@ export const useDoctorStore = defineStore("doctor", {
             });
         },
 
-        isToday(iso: string) {
-            const d = new Date(iso);
-            const now = new Date();
-            return d.getFullYear() === now.getFullYear()
-                && d.getMonth() === now.getMonth()
-                && d.getDate() === now.getDate();
+        // ✅ NUEVO: “visible en vistas operativas” por 24h exactas desde triageAt
+        isWithin24h(iso: string) {
+            const t = new Date(iso).getTime();
+            if (!Number.isFinite(t)) return false;
+            const diff = Date.now() - t;
+            return diff >= 0 && diff < 24 * 60 * 60 * 1000;
         },
 
+        // ====== ALERTAS SONORAS ======
         unlockAudio() {
-            // Esto debe llamarse tras interacción del usuario (click) para evitar bloqueo del navegador
             try {
                 if (!this._audioCtx) this._audioCtx = new AudioContext();
                 if (this._audioCtx.state === "suspended") this._audioCtx.resume();
                 this._audioUnlocked = true;
-            } catch {
-                // si el navegador bloquea, no pasa nada, solo no sonará
-            }
+            } catch {}
         },
 
         beepOnce(freq: number, ms = 180) {
             if (!this._audioUnlocked) return;
             if (!this._audioCtx) this._audioCtx = new AudioContext();
             const ctx = this._audioCtx;
-
             if (ctx.state === "suspended") ctx.resume();
 
             const osc = ctx.createOscillator();
             const gain = ctx.createGain();
-
             osc.type = "sine";
             osc.frequency.value = freq;
             gain.gain.value = 0.08;
@@ -290,7 +283,6 @@ export const useDoctorStore = defineStore("doctor", {
         startAlertSound(classification: string) {
             this.stopAlertSound();
 
-            // patrón por color
             if (classification === "ROJO") {
                 this._beepTimer = setInterval(() => {
                     this.beepOnce(880, 160);
@@ -315,7 +307,6 @@ export const useDoctorStore = defineStore("doctor", {
             this._notifiedIds.push(row.id);
             this.alertQueue.push(row);
 
-            // si es la primera alerta, arrancamos sonido ya
             if (this.alertQueue.length === 1) {
                 this.startAlertSound(row.classification);
             }
@@ -329,7 +320,6 @@ export const useDoctorStore = defineStore("doctor", {
             if (!this.alertQueue.length) {
                 this.stopAlertSound();
             } else {
-                // cambia patrón según el siguiente paciente
                 this.startAlertSound(this.alertQueue[0].classification);
             }
         },
@@ -339,7 +329,7 @@ export const useDoctorStore = defineStore("doctor", {
             if (idx <= 0) return;
             const [item] = this.alertQueue.splice(idx, 1);
             this.alertQueue.unshift(item);
-            this.startAlertSound(item.classification); // cambia patrón al nuevo “actual”
+            this.startAlertSound(item.classification);
         },
     },
 });

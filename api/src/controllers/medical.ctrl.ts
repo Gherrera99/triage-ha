@@ -1,8 +1,16 @@
-//api/src/controllers/medical.ctrl.ts
+// api/src/controllers/medical.ctrl.ts
 import { Request, Response } from "express";
 import { prisma } from "../prisma";
 import { buildTriagePdf } from "../services/pdf/triagePdf";
-import { emitToRole } from "../socket"; // ✅ agrégalo
+import { emitToRole } from "../socket";
+
+function isConsulta(motivo: any) {
+    return String(motivo ?? "").trim().toUpperCase() === "CONSULTA";
+}
+
+function asText(v: any) {
+    return typeof v === "string" ? v : "";
+}
 
 export async function startConsultation(req: Request, res: Response) {
     const doctor = (req as any).user;
@@ -17,36 +25,56 @@ export async function startConsultation(req: Request, res: Response) {
 
             if (!triage) throw Object.assign(new Error("No existe triage"), { status: 404 });
 
-            // solo si ya está pagado
+            // ✅ solo CONSULTA pasa a médico
+            if (!isConsulta(triage.motivoUrgencia)) {
+                throw Object.assign(
+                    new Error("Este motivo se cierra en Caja (no pasa a Médico)"),
+                    { status: 400 }
+                );
+            }
+
+            // ✅ si ya fue cerrado por caja / no-show / etc, no permitir iniciar
+            if (triage.closedAt || triage.refusedPayment || triage.noShow) {
+                throw Object.assign(new Error("Este paciente ya fue cerrado"), { status: 409 });
+            }
+
+            // ✅ solo si ya está pagado
             if (triage.paidStatus !== "PAID") {
                 throw Object.assign(new Error("El paciente aún no está pagado"), { status: 400 });
             }
 
             // Si ya existe consulta iniciada por OTRO médico => bloquear
             if (triage.medicalNote?.consultationStartedAt && triage.medicalNote.doctorId !== doctor.id) {
-                throw Object.assign(new Error("Este paciente ya está siendo atendido por otro médico"), { status: 409 });
+                throw Object.assign(new Error("Este paciente ya está siendo atendido por otro médico"), {
+                    status: 409,
+                });
             }
 
-            // Si NO hay nota, la crea. Si hay nota del mismo doctor, asegura startedAt.
+            // ✅ Schema NUEVO: vigilanciaTexto, contraRefFollowUp, contraRefWhen
             const created = await tx.medicalNote.upsert({
                 where: { triageId },
                 create: {
                     triageId,
                     doctorId: doctor.id,
                     consultationStartedAt: new Date(),
+
                     padecimientoActual: "",
                     antecedentes: "",
                     exploracionFisica: "",
                     estudiosParaclinicos: "",
                     diagnostico: "",
                     planTratamiento: "",
-                    vigilancia: null,
-                    contrarreferencia: "",
+
+                    vigilanciaTexto: "",
+
+                    contraRefFollowUp: false,
+                    contraRefWhen: null,
+                    contrarreferencia: "NO", // (campo legacy requerido en tu schema)
+
                     pronostico: "",
                 },
                 update: triage.medicalNote
                     ? {
-                        // NO cambies doctorId si ya lo tomó el mismo
                         doctorId: doctor.id,
                         consultationStartedAt: triage.medicalNote.consultationStartedAt ?? new Date(),
                     }
@@ -60,7 +88,6 @@ export async function startConsultation(req: Request, res: Response) {
             return created;
         });
 
-        // 🔔 broadcast a DOCTOR y NURSE_TRIAGE para que refresquen tabs/listas
         emitToRole("DOCTOR", "consultation:started", { triageId, doctorId: doctor.id });
         emitToRole("NURSE_TRIAGE", "consultation:started", { triageId, doctorId: doctor.id });
 
@@ -76,11 +103,23 @@ export async function upsertNote(req: Request, res: Response) {
     const triageId = Number(req.params.triageId);
     const data = req.body ?? {};
 
-    // ✅ valida ANTES
     const existing = await prisma.medicalNote.findUnique({ where: { triageId } });
     if (existing && existing.doctorId !== doctor.id) {
         return res.status(409).json({ error: "Este paciente pertenece a otro médico" });
     }
+
+    // ✅ contrarreferencia “texto legacy” (para no romper reportes viejos)
+    const followUp = !!data.contraRefFollowUp;
+    const when = typeof data.contraRefWhen === "string" ? data.contraRefWhen.trim() : "";
+    const contraLegacy = followUp ? (when ? `SI - ${when}` : "SI") : "NO";
+
+    // ✅ vigilanciaTexto (nuevo); si te llega algo viejo, lo convierte a texto
+    const vigilanciaTexto =
+        typeof data.vigilanciaTexto === "string"
+            ? data.vigilanciaTexto
+            : typeof data.vigilancia === "string"
+                ? data.vigilancia
+                : "";
 
     const note = await prisma.medicalNote.upsert({
         where: { triageId },
@@ -88,27 +127,38 @@ export async function upsertNote(req: Request, res: Response) {
             triageId,
             doctorId: doctor.id,
             consultationStartedAt: new Date(),
-            padecimientoActual: data.padecimientoActual ?? "",
-            antecedentes: data.antecedentes ?? "",
-            exploracionFisica: data.exploracionFisica ?? "",
-            estudiosParaclinicos: data.estudiosParaclinicos ?? "",
-            diagnostico: data.diagnostico ?? "",
-            planTratamiento: data.planTratamiento ?? "",
-            vigilancia: data.vigilancia ?? null,
-            contrarreferencia: data.contrarreferencia ?? "",
-            pronostico: data.pronostico ?? "",
+
+            padecimientoActual: asText(data.padecimientoActual),
+            antecedentes: asText(data.antecedentes),
+            exploracionFisica: asText(data.exploracionFisica),
+            estudiosParaclinicos: asText(data.estudiosParaclinicos),
+            diagnostico: asText(data.diagnostico),
+            planTratamiento: asText(data.planTratamiento),
+
+            vigilanciaTexto: asText(vigilanciaTexto),
+
+            contraRefFollowUp: followUp,
+            contraRefWhen: when || null,
+            contrarreferencia: contraLegacy,
+
+            pronostico: asText(data.pronostico),
         },
         update: {
-            // ✅ NO toques consultationStartedAt aquí
-            padecimientoActual: data.padecimientoActual ?? "",
-            antecedentes: data.antecedentes ?? "",
-            exploracionFisica: data.exploracionFisica ?? "",
-            estudiosParaclinicos: data.estudiosParaclinicos ?? "",
-            diagnostico: data.diagnostico ?? "",
-            planTratamiento: data.planTratamiento ?? "",
-            vigilancia: data.vigilancia ?? null,
-            contrarreferencia: data.contrarreferencia ?? "",
-            pronostico: data.pronostico ?? "",
+            // ✅ NO tocar consultationStartedAt aquí
+            padecimientoActual: asText(data.padecimientoActual),
+            antecedentes: asText(data.antecedentes),
+            exploracionFisica: asText(data.exploracionFisica),
+            estudiosParaclinicos: asText(data.estudiosParaclinicos),
+            diagnostico: asText(data.diagnostico),
+            planTratamiento: asText(data.planTratamiento),
+
+            vigilanciaTexto: asText(vigilanciaTexto),
+
+            contraRefFollowUp: followUp,
+            contraRefWhen: when || null,
+            contrarreferencia: contraLegacy,
+
+            pronostico: asText(data.pronostico),
         },
     });
 

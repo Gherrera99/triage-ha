@@ -47,17 +47,30 @@ onMounted(async () => {
         <div>
           <div class="text-xl font-semibold">{{ d.detail.patient.fullName }}</div>
           <div class="text-sm text-gray-500">
-            Triage: {{ fmt(d.detail.triageAt) }} · Clasificación: <span class="font-semibold">{{ d.detail.classification }}</span>
+            Triage: {{ fmt(d.detail.triageAt) }} · Clasificación:
+            <span class="font-semibold">{{ d.detail.classification }}</span>
           </div>
         </div>
 
         <div class="flex gap-2">
           <button class="px-3 py-2 rounded-xl border text-sm hover:bg-gray-50" @click="close">Cerrar</button>
-          <button class="px-3 py-2 rounded-xl bg-emerald-600 text-white text-sm disabled:opacity-50"
-                  :disabled="finished" @click="save">Guardar nota</button>
-          <button class="px-3 py-2 rounded-xl bg-gray-900 text-white text-sm" @click="d.openPdf(id)">Imprimir PDF</button>
-          <button class="px-3 py-2 rounded-xl bg-rose-600 text-white text-sm disabled:opacity-50"
-                  :disabled="finished" @click="finish">Finalizar</button>
+          <button
+              class="px-3 py-2 rounded-xl bg-emerald-600 text-white text-sm disabled:opacity-50"
+              :disabled="finished"
+              @click="save"
+          >
+            Guardar nota
+          </button>
+          <button class="px-3 py-2 rounded-xl bg-gray-900 text-white text-sm" @click="d.openPdf(id)">
+            Imprimir PDF
+          </button>
+          <button
+              class="px-3 py-2 rounded-xl bg-rose-600 text-white text-sm disabled:opacity-50"
+              :disabled="finished"
+              @click="finish"
+          >
+            Finalizar
+          </button>
         </div>
       </div>
 
@@ -96,21 +109,15 @@ onMounted(async () => {
       </div>
 
       <div class="grid grid-cols-2 gap-3 mt-4">
-        <div class="border rounded-xl p-4">
-          <div class="font-semibold mb-2">Vigilar datos de alarma</div>
-          <div class="grid grid-cols-2 gap-2 text-sm">
-            <label class="flex gap-2 items-center"><input type="checkbox" v-model="d.note.vig.fiebre38" :disabled="finished" /> Fiebre > 38°C</label>
-            <label class="flex gap-2 items-center"><input type="checkbox" v-model="d.note.vig.convulsiones" :disabled="finished" /> Convulsiones</label>
-            <label class="flex gap-2 items-center"><input type="checkbox" v-model="d.note.vig.alteracionAlerta" :disabled="finished" /> Alteración alerta</label>
-            <label class="flex gap-2 items-center"><input type="checkbox" v-model="d.note.vig.sangradoActivo" :disabled="finished" /> Sangrado activo</label>
-            <label class="flex gap-2 items-center"><input type="checkbox" v-model="d.note.vig.deshidratacion" :disabled="finished" /> Deshidratación</label>
-            <label class="flex gap-2 items-center"><input type="checkbox" v-model="d.note.vig.vomitosFrecuentes" :disabled="finished" /> Vómitos frecuentes</label>
-            <label class="flex gap-2 items-center"><input type="checkbox" v-model="d.note.vig.irritabilidad" :disabled="finished" /> Irritabilidad</label>
-            <label class="flex gap-2 items-center"><input type="checkbox" v-model="d.note.vig.llantoInconsolable" :disabled="finished" /> Llanto inconsolable</label>
-            <label class="flex gap-2 items-center"><input type="checkbox" v-model="d.note.vig.dificultadRespiratoria" :disabled="finished" /> Dificultad respiratoria</label>
-            <label class="flex gap-2 items-center"><input type="checkbox" v-model="d.note.vig.choque" :disabled="finished" /> Datos de choque</label>
-            <label class="flex gap-2 items-center"><input type="checkbox" v-model="d.note.vig.deterioroNeurologico" :disabled="finished" /> Deterioro neurológico</label>
-          </div>
+        <!-- ✅ CAMPO LIBRE -->
+        <div class="border rounded-xl p-4 space-y-2">
+          <div class="font-semibold">Vigilar datos de alarma</div>
+          <textarea
+              v-model="d.note.vigilanciaTexto"
+              :disabled="finished"
+              class="w-full border rounded-xl p-3 min-h-[140px]"
+              placeholder="Especificar datos de alarma / vigilancia..."
+          />
         </div>
 
         <div class="border rounded-xl p-4 space-y-2">
@@ -122,11 +129,13 @@ onMounted(async () => {
             Sí
           </label>
 
-          <input v-if="d.note.contraRefFollowUp"
-                 v-model="d.note.contraRefWhen"
-                 :disabled="finished"
-                 placeholder="¿En cuánto tiempo?"
-                 class="w-full border rounded-xl p-2 text-sm" />
+          <input
+              v-if="d.note.contraRefFollowUp"
+              v-model="d.note.contraRefWhen"
+              :disabled="finished"
+              placeholder="¿En cuánto tiempo?"
+              class="w-full border rounded-xl p-2 text-sm"
+          />
 
           <div class="font-semibold mt-3">Pronóstico</div>
           <textarea v-model="d.note.pronostico" :disabled="finished" class="w-full border rounded-xl p-3 min-h-[90px]" />

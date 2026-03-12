@@ -10,6 +10,9 @@ export type CashierQueueRow = {
     motivoUrgencia: string;
     classification: TriageColor;
     paidStatus: PaymentStatus;
+    closedAt?: string | null;
+    closedReason?: string | null;
+    refusedPayment?: boolean;
 
     patient: {
         expediente: string | null;
@@ -28,6 +31,7 @@ export const useCashierStore = defineStore("cashier", {
         rows: [] as CashierQueueRow[],
         loading: false,
         paying: false,
+        refusing: false,
     }),
 
     actions: {
@@ -41,13 +45,25 @@ export const useCashierStore = defineStore("cashier", {
             }
         },
 
-        async markPaid(triageId: number, amount: number | null) {
+        async markPaid(triageId: number, expediente?: string | null) {
             this.paying = true;
             try {
-                await http.post(`/payments/${triageId}/pay`, { amount });
+                await http.post(`/payments/${triageId}/pay`, {
+                    expediente: expediente ?? null,
+                });
                 await this.fetchQueue();
             } finally {
                 this.paying = false;
+            }
+        },
+
+        async refusePayment(triageId: number) {
+            this.refusing = true;
+            try {
+                await http.post(`/payments/${triageId}/refuse`);
+                await this.fetchQueue();
+            } finally {
+                this.refusing = false;
             }
         },
     },

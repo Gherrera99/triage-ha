@@ -1,5 +1,5 @@
 export function slaMinutes(classification: "GREEN" | "YELLOW" | "RED") {
-    if (classification === "GREEN") return 120;
-    if (classification === "YELLOW") return 60;
+    if (classification === "GREEN") return 45;
+    if (classification === "YELLOW") return 30;
     return 0;
 }

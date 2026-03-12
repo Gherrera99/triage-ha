@@ -65,6 +65,16 @@ function rect(doc: PDFKit.PDFDocument, x: number, y: number, w: number, h: numbe
     doc.rect(x, y, w, h).stroke();
 }
 
+function toBool(v: any): boolean {
+    if (typeof v === "boolean") return v;
+    if (typeof v === "number") return v === 1;
+    if (typeof v === "string") {
+        const s = v.trim().toLowerCase();
+        return ["1", "true", "si", "sí", "yes", "y", "on"].includes(s);
+    }
+    return false;
+}
+
 function textInBox(
     doc: PDFKit.PDFDocument,
     txt: string,
@@ -87,7 +97,7 @@ function textInBox(
     const align = opts?.align ?? "left";
     const vCenter = opts?.vCenter ?? false;
     const lineGap = opts?.lineGap ?? 0;
-    const ellipsis = opts?.ellipsis ?? false; // por defecto NO "..."
+    const ellipsis = opts?.ellipsis ?? false;
 
     doc.font(opts?.bold ? "Helvetica-Bold" : "Helvetica");
     doc.fontSize(size).fillColor(C.black);
@@ -144,7 +154,6 @@ function drawLogoInBox(
 ) {
     if (!fs.existsSync(file)) return;
 
-    // openImage no siempre está en typings, por eso el any
     const img = (doc as any).openImage(file);
     const scale = Math.min(boxW / img.width, boxH / img.height);
     const w = img.width * scale;
@@ -220,7 +229,6 @@ function textMultiLineAutoFit(
     });
 }
 
-// intenta bajar tamaño hasta que quepa en una sola línea
 function drawInlineAutoFit(
     doc: PDFKit.PDFDocument,
     parts: string[],
@@ -245,26 +253,53 @@ function drawInlineAutoFit(
     }
 }
 
-function mapVigilancia(v: any): Record<string, boolean> {
-    if (!v) return {};
-    if (typeof v === "object" && !Array.isArray(v)) return v as any;
-    if (Array.isArray(v)) {
-        const txt = v.map(String).join(" ").toLowerCase();
-        return {
-            vigFiebre38: txt.includes("fiebre"),
-            vigConvulsiones: txt.includes("convuls"),
-            vigAlteracionAlerta: txt.includes("alerta"),
-            vigSangradoActivo: txt.includes("sangrado"),
-            vigDeshidratacion: txt.includes("deshidra"),
-            vigVomitosFrecuentes: txt.includes("vomit") || txt.includes("vómit"),
-            vigIrritabilidad: txt.includes("irrit"),
-            vigLlantoInconsolable: txt.includes("llanto"),
-            vigDificultadRespiratoria: txt.includes("respir"),
-            vigChoque: txt.includes("choque"),
-            vigDeterioroNeurologico: txt.includes("neuro"),
-        };
-    }
-    return {};
+// ✅ compat: si aún existe contrarreferencia como string "SI - X"
+function parseContraLegacy(s: any) {
+    const raw = String(s ?? "").trim();
+    if (!raw) return { follow: false, when: "" };
+    const up = raw.toUpperCase();
+    if (!up.startsWith("SI")) return { follow: false, when: "" };
+
+    const parts = raw.split("-");
+    const when = (parts[1] ?? "").trim();
+    return { follow: true, when };
+}
+
+// helper: bloque SI/NO + Lugar dentro de un ancho dado (nunca se pasa del límite)
+function drawYesNoLugar(
+    doc: PDFKit.PDFDocument,
+    x: number,
+    y: number,
+    w: number,
+    h: number,
+    label: string,
+    valueYes: boolean,
+    place: string
+) {
+    const font = 8.1;
+    const padL = 6;
+
+    let cx = x + padL;
+
+    const labelW = Math.min(168, Math.max(130, w * 0.52));
+    textInBox(doc, label, cx, y, labelW, h, { bold: true, vCenter: true, size: font, pad: 1 });
+    cx += labelW + 4;
+
+    textInBox(doc, "No", cx, y, 14, h, { vCenter: true, size: font, pad: 0 });
+    cx += 14;
+    drawCheck(doc, cx, y + 4, 10, !valueYes);
+    cx += 14;
+
+    textInBox(doc, "Sí", cx, y, 14, h, { vCenter: true, size: font, pad: 0 });
+    cx += 14;
+    drawCheck(doc, cx, y + 4, 10, valueYes);
+    cx += 16;
+
+    textInBox(doc, "Lugar:", cx, y, 38, h, { bold: true, vCenter: true, size: font, pad: 1 });
+    cx += 40;
+
+    const placeW = Math.max(10, x + w - 6 - cx);
+    textInBox(doc, place, cx, y, placeW, h, { vCenter: true, size: font, pad: 1, ellipsis: true });
 }
 
 // ========= Textos del formato =========
@@ -291,59 +326,17 @@ const PARAM_TXT = {
 const CLASIF_TXT = {
     VERDE: {
         title: "URGENCIA NO CALIFICADA",
-        desc: "Atención según disponibilidad del servicio,\nhasta 120 minutos de tiempo de espera,\npuede ser referido a su CS en caso necesario.",
+        desc: "Atención según disponibilidad del servicio,\nhasta 45 minutos de tiempo de espera,\npuede ser referido a su CS en caso necesario.",
     },
     AMARILLO: {
         title: "URGENCIA CALIFICADA",
-        desc: "Se actúa según el caso: pasa a consultorio\no cama de observación, se toman signos vitales,tiene atención prioritaria, la respuesta debe ser de 15 a 60 minutos",
+        desc: "Se actúa según el caso: pasa a consultorio\no cama de observación, se toman signos vitales,tiene atención prioritaria, la respuesta debe ser de 15 a 30 minutos",
     },
     ROJO: {
         title: "EMERGENCIA O CRÍTICO",
         desc: "Eventos que ponen en peligro su vida.\nIngresa a cama de choque o reanimación\npara atención inmediata",
     },
 };
-
-// helper: bloque SI/NO + Lugar dentro de un ancho dado (nunca se pasa del límite)
-function drawYesNoLugar(
-    doc: PDFKit.PDFDocument,
-    x: number,
-    y: number,
-    w: number,
-    h: number,
-    label: string,
-    valueYes: boolean,
-    place: string
-) {
-    const font = 8.1;
-    const padL = 6;
-
-    let cx = x + padL;
-
-    // label
-    const labelW = Math.min(168, Math.max(130, w * 0.52));
-    textInBox(doc, label, cx, y, labelW, h, { bold: true, vCenter: true, size: font, pad: 1 });
-    cx += labelW + 4;
-
-    // No
-    textInBox(doc, "No", cx, y, 14, h, { vCenter: true, size: font, pad: 0 });
-    cx += 14;
-    drawCheck(doc, cx, y + 4, 10, !valueYes);
-    cx += 14;
-
-    // Sí
-    textInBox(doc, "Sí", cx, y, 14, h, { vCenter: true, size: font, pad: 0 });
-    cx += 14;
-    drawCheck(doc, cx, y + 4, 10, valueYes);
-    cx += 16;
-
-    // Lugar
-    textInBox(doc, "Lugar:", cx, y, 38, h, { bold: true, vCenter: true, size: font, pad: 1 });
-    cx += 40;
-
-    const placeW = Math.max(10, x + w - 6 - cx);
-    // aquí sí permitimos ellipsis para que jamás invada al bloque derecho
-    textInBox(doc, place, cx, y, placeW, h, { vCenter: true, size: font, pad: 1, ellipsis: true });
-}
 
 export function buildTriagePdf(triage: any, out: Writable) {
     const doc = new PDFDocument({ size: resolvePageSize() as any, margin: 16 });
@@ -373,9 +366,7 @@ export function buildTriagePdf(triage: any, out: Writable) {
     textInBox(doc, "HOJA DE VALORACIÓN EN URGENCIAS PEDIÁTRICAS.", titleX, y + 24, titleW, 12, { bold: true, align: "center", vCenter: true, size: 9 });
     textInBox(doc, "TRIAGE", titleX, y + 36, titleW, 16, { bold: true, align: "center", vCenter: true, size: 14 });
 
-// antes tenías y += 56;
     y += 60;
-
 
     // ============ DATOS IDENTIFICACIÓN ============
     const idTitleH = 12;
@@ -388,8 +379,10 @@ export function buildTriagePdf(triage: any, out: Writable) {
 
     const p = triage.patient ?? {};
     const n = triage.medicalNote ?? {};
-    const horaAtencion = n.consultationStartedAt ?? triage.triageAt;
 
+    const birthDate = p.birthDate ?? p.dateNacimiento ?? null;
+
+    const horaAtencion = n.consultationStartedAt ?? triage.triageAt;
     const rowH = idBoxH / 3;
 
     // Fila 1: Fecha / Hora / Expediente
@@ -428,7 +421,7 @@ export function buildTriagePdf(triage: any, out: Writable) {
     doc.moveTo(M + W - rightW, row3Y).lineTo(M + W - rightW, row3Y + rowH).stroke();
 
     textInBox(doc, "FECHA DE NACIMIENTO:", M + 6, row3Y, 140, rowH, { bold: true, vCenter: true, size: 8.6 });
-    textInBox(doc, fmtDateMerida(p.dateNacimiento), M + 148, row3Y, W - rightW - 154, rowH, { vCenter: true, size: 8.6 });
+    textInBox(doc, fmtDateMerida(birthDate), M + 148, row3Y, W - rightW - 154, rowH, { vCenter: true, size: 8.6 });
 
     textInBox(doc, "EDAD:", M + W - rightW + 6, row3Y, 40, rowH, { bold: true, vCenter: true, size: 8.6 });
     textInBox(doc, safeStr(p.age), M + W - rightW + 46, row3Y, 38, rowH, { vCenter: true, size: 8.6 });
@@ -455,8 +448,6 @@ export function buildTriagePdf(triage: any, out: Writable) {
     // ============ TABLA PARÁMETROS ============
     const tblX = M;
     const leftW2 = 120;
-
-    // ✅ tick más angosto para ganar ancho de texto
     const tickW = 18;
     const groupW = (W - leftW2) / 3;
     const txtW = groupW - tickW;
@@ -528,7 +519,6 @@ export function buildTriagePdf(triage: any, out: Writable) {
     rect(doc, tblX, y, leftW2, classH, C.blueBar);
     textInBox(doc, "CLASIFICACIÓN DE\nLA URGENCIA", tblX, y, leftW2, classH, { bold: true, align: "center", vCenter: true, size: 9.2 });
 
-    // ✅ más alto arriba para que quepa "URGENCIA NO CALIFICADA" sin truncar
     const topH = 36;
     const botH = classH - topH;
 
@@ -576,11 +566,10 @@ export function buildTriagePdf(triage: any, out: Writable) {
     const miniH = 18;
     rect(doc, M, y, W, miniH);
 
-    const mayaW = 170;               // ↓ más compacto
-    const leftW = W - mayaW;         // ancho real para el responsable
+    const mayaW = 170;
+    const leftW = W - mayaW;
     doc.moveTo(M + leftW, y).lineTo(M + leftW, y + miniH).stroke();
 
-// label + value (auto-fit)
     const respLabelW = 190;
     textInBox(doc, "Nombre del Responsable del paciente:", M + 6, y, respLabelW, miniH, { bold: true, vCenter: true, size: 8.5, pad: 1 });
 
@@ -588,12 +577,11 @@ export function buildTriagePdf(triage: any, out: Writable) {
     const respValueW = leftW - (respLabelW + 14);
     textSingleLineAutoFit(doc, safeStr(p.responsibleName).toUpperCase(), respValueX, y, respValueW, miniH, {
         size: 8.5,
-        minSize: 6.8,
+        minSize: 6.6,
         pad: 1,
         align: "left",
     });
 
-// maya hablante (en su bloque)
     const mx = M + leftW + 6;
     textInBox(doc, "Maya Hablante:", mx, y, 74, miniH, { bold: true, vCenter: true, size: 8.5, pad: 1 });
 
@@ -605,35 +593,13 @@ export function buildTriagePdf(triage: any, out: Writable) {
 
     y += miniH;
 
-
-    // ============ Atención previa / Referencia (FIX: layout relativo por mitad) ============
+    // ============ Atención previa / Referencia ============
     rect(doc, M, y, W, miniH);
     const half = W / 2;
     doc.moveTo(M + half, y).lineTo(M + half, y + miniH).stroke();
 
-    // izquierda (dentro de [M, M+half])
-    drawYesNoLugar(
-        doc,
-        M,
-        y,
-        half,
-        miniH,
-        "Atención previa por la misma patología:",
-        !!triage.hadPriorCareSamePathology,
-        safeStr(triage.priorCarePlace)
-    );
-
-    // derecha (dentro de [M+half, M+W])
-    drawYesNoLugar(
-        doc,
-        M + half,
-        y,
-        half,
-        miniH,
-        "Paciente con Referencia:",
-        !!triage.hasReferral,
-        safeStr(triage.referralPlace)
-    );
+    drawYesNoLugar(doc, M, y, half, miniH, "Atención previa por la misma patología:", !!triage.hadPriorCareSamePathology, safeStr(triage.priorCarePlace));
+    drawYesNoLugar(doc, M + half, y, half, miniH, "Paciente con Referencia:", !!triage.hasReferral, safeStr(triage.referralPlace));
 
     y += miniH;
 
@@ -676,11 +642,9 @@ export function buildTriagePdf(triage: any, out: Writable) {
 
     const proH = 18;
 
-    // ✅ gaps mínimos (para ganar espacio)
     const proTop = sigTop - 2 - proH;
     const contraTop = proTop - 2 - contraH;
 
-    // Área disponible para secciones (PA, ANT, EF, EP, DX, PLAN)
     const titleH = 12;
     const sectionsTopY = y;
     const availableForSections = Math.max(120, contraTop - sectionsTopY);
@@ -688,12 +652,11 @@ export function buildTriagePdf(triage: any, out: Writable) {
     const totalTitle = titleH * 6;
     const contentAvail = Math.max(160, availableForSections - totalTitle);
 
-    // alturas base con mínimos
     const mins = { pa: 28, ant: 28, ef: 34, ep: 28, dx: 52 };
     const weights = { pa: 0.9, ant: 0.9, ef: 1.15, ep: 0.85, dx: 1.2 };
 
     const sumW = Object.values(weights).reduce((a, b) => a + b, 0);
-    const unit = contentAvail / (sumW + 2.5); // + plan weight
+    const unit = contentAvail / (sumW + 2.5);
 
     let hPA = Math.max(mins.pa, Math.round(unit * weights.pa));
     let hANT = Math.max(mins.ant, Math.round(unit * weights.ant));
@@ -701,13 +664,11 @@ export function buildTriagePdf(triage: any, out: Writable) {
     let hEP = Math.max(mins.ep, Math.round(unit * weights.ep));
     let hDX = Math.max(mins.dx, Math.round(unit * weights.dx));
 
-    // ✅ PLAN = lo que SOBRA (garantiza que NO se monta con contrarreferencia)
     let used = hPA + hANT + hEF + hEP + hDX;
     let hPLAN = contentAvail - used;
 
     const planMin = 110;
     if (hPLAN < planMin) {
-        // si falta, recorta un poco de las otras secciones (sin bajar de mínimos)
         let need = planMin - hPLAN;
         const order: Array<[keyof typeof mins, () => number, (v: number) => void]> = [
             ["dx", () => hDX, (v) => (hDX = v)],
@@ -727,7 +688,7 @@ export function buildTriagePdf(triage: any, out: Writable) {
             need -= take;
         }
         used = hPA + hANT + hEF + hEP + hDX;
-        hPLAN = Math.max(80, contentAvail - used); // ya nunca se pasa
+        hPLAN = Math.max(80, contentAvail - used);
     }
 
     function section(title: string, content: string, h: number) {
@@ -746,7 +707,7 @@ export function buildTriagePdf(triage: any, out: Writable) {
     section("ESTUDIOS PARACLÍNICOS REALIZADOS Y/O SOLICITADOS:", safeStr(n.estudiosParaclinicos), hEP);
     section("DIAGNÓSTICO(S):", safeStr(n.diagnostico), hDX);
 
-    // PLAN + VIGILANCIA
+    // PLAN + DATOS DE ALARMA (texto libre)
     rect(doc, M, y, W, titleH, C.greyBar);
     textInBox(doc, "PLAN O TRATAMIENTO A SEGUIR:", M + 6, y, W - 12, titleH, { bold: true, vCenter: true, size: 8.8 });
     y += titleH;
@@ -757,58 +718,31 @@ export function buildTriagePdf(triage: any, out: Writable) {
     rect(doc, M, y, planLeftW, hPLAN);
     textInBox(doc, safeStr(n.planTratamiento), M + 2, y + 1, planLeftW - 4, hPLAN - 2, { size: 8, pad: 5 });
 
+    // ✅ antes era checklist: ahora texto libre (vigilanciaTexto)
     const alarmX = M + planLeftW;
     rect(doc, alarmX, y, planRightW, hPLAN);
-
-    const v = mapVigilancia(n.vigilancia);
 
     const vertLabelW = 14;
     rect(doc, alarmX, y, vertLabelW, hPLAN, C.greyBar);
 
-    // ✅ solo este título, corto (no se desborda)
     doc.save();
     doc.translate(alarmX + 6, y + hPLAN - 6);
     doc.rotate(-90);
     doc.font("Helvetica-Bold").fontSize(6.2).fillColor(C.black);
-    doc.text("Vigilancia estrecha", 0, 0, { width: hPLAN - 10, align: "center" });
+    doc.text("Datos de alarma", 0, 0, { width: hPLAN - 10, align: "center" });
     doc.restore();
 
-    const items: Array<[string, string]> = [
-        ["vigFiebre38", "Fiebre continua > 38 °C"],
-        ["vigConvulsiones", "Convulsiones"],
-        ["vigAlteracionAlerta", "Alteración del estado de alerta"],
-        ["vigSangradoActivo", "Sangrado activo"],
-        ["vigDeshidratacion", "Datos de deshidratación"],
-        ["vigVomitosFrecuentes", "Vómitos frecuentes"],
-        ["vigIrritabilidad", "Irritabilidad"],
-        ["vigLlantoInconsolable", "Llanto que no cede"],
-        ["vigDificultadRespiratoria", "Dificultad respiratoria"],
-        ["vigChoque", "Datos de choque"],
-        ["vigDeterioroNeurologico", "Deterioro neurológico"],
-    ];
+    const vigText =
+        safeStr(n.vigilanciaTexto ?? "") ||
+        // compat si aún guardaste algo en vigilancia (viejo)
+        safeStr(n.vigilancia ?? "");
 
-    const rowAH = Math.floor(hPLAN / items.length);
-    let ay = y;
-
-    for (let i = 0; i < items.length; i++) {
-        const [k, label] = items[i];
-        const h = i === items.length - 1 ? y + hPLAN - ay : rowAH;
-
-        rect(doc, alarmX + vertLabelW, ay, planRightW - vertLabelW, h);
-
-        const cx = alarmX + vertLabelW + 4;
-        const cy = ay + Math.max(2, (h - 8) / 2);
-        drawCheck(doc, cx, cy, 8, !!(v as any)[k]);
-
-        textInBox(doc, label, alarmX + vertLabelW + 16, ay, planRightW - vertLabelW - 18, h, {
-            size: 6.9,
-            vCenter: true,
-            pad: 1,
-            ellipsis: false,
-        });
-
-        ay += h;
-    }
+    rect(doc, alarmX + vertLabelW, y, planRightW - vertLabelW, hPLAN);
+    textInBox(doc, vigText, alarmX + vertLabelW + 2, y + 1, planRightW - vertLabelW - 4, hPLAN - 2, {
+        size: 7.6,
+        pad: 4,
+        ellipsis: false,
+    });
 
     y += hPLAN;
 
@@ -821,7 +755,15 @@ export function buildTriagePdf(triage: any, out: Writable) {
 
     rect(doc, M, y, W, contraRowH);
 
-    const crYes = !!n.contraRefFollowUp;
+    // ✅ Prioridad: campos nuevos. Fallback: string contrarreferencia.
+    let crYes = toBool(n.contraRefFollowUp);
+    let crWhen = safeStr(n.contraRefWhen ?? "");
+
+    if (!crYes && !crWhen) {
+        const legacy = parseContraLegacy(n.contrarreferencia);
+        crYes = legacy.follow;
+        crWhen = legacy.when;
+    }
 
     textInBox(doc, "Solicitar seguimiento en su Centro de salud o unidad de 1er nivel:", M + 6, y, 360, contraRowH, {
         vCenter: true,
@@ -840,7 +782,8 @@ export function buildTriagePdf(triage: any, out: Writable) {
     const lineX2 = M + W - 10;
     const lineY = y + contraRowH - 6;
     doc.moveTo(lineX1, lineY).lineTo(lineX2, lineY).stroke();
-    textInBox(doc, crYes ? safeStr(n.contraRefWhen) : "", lineX1, y, lineX2 - lineX1, contraRowH, { vCenter: true, size: 8.2, pad: 1 });
+
+    textInBox(doc, crYes ? crWhen : "", lineX1, y, lineX2 - lineX1, contraRowH, { vCenter: true, size: 8.2, pad: 1 });
 
     // ================== PRONÓSTICO (1 sola fila, pegado) ==================
     y = proTop;
@@ -868,7 +811,6 @@ export function buildTriagePdf(triage: any, out: Writable) {
     const manifesto =
         "Manifiesto haber sido informado(a) a mi satisfacción del diagnóstico y plan de tratamiento, así como también de los riesgos, complicaciones y signos de alarma del padecimiento de mi familiar";
 
-// área inferior derecha: más alta y con autofit por altura
     const manX = M + W / 2 + 6;
     const manY = sigY + 32;
     const manW = W / 2 - 12;
@@ -881,7 +823,6 @@ export function buildTriagePdf(triage: any, out: Writable) {
         pad: 1,
         lineGap: 0.6,
     });
-
 
     // ================== FOOTER (abajo, sin montar) ==================
     const footerY = footerTop + 2;

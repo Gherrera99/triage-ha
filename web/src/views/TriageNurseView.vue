@@ -1,9 +1,8 @@
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref, onBeforeUnmount } from "vue";
+import { computed, onMounted, reactive, ref, onBeforeUnmount, watch } from "vue";
 import { useTriageNurseStore, type TriageColor, type NurseTriageRow } from "../stores/triageNurse";
 import { useSocket } from "../composables/useSocket";
 import TriageGuideTable from "../components/TriageGuideTable.vue";
-
 
 const s = useTriageNurseStore();
 
@@ -14,17 +13,63 @@ type StatusTab = "ESPERA" | "CONSULTA" | "ATENDIDO";
 const statusTab = ref<StatusTab>("ESPERA");
 
 const { socket } = useSocket();
-let offA: any, offB: any;
+let offA: any;
+
+const MOTIVOS = [
+  "CONSULTA",
+  "RETIRO DE PUNTOS",
+  "NEBULIZACIONES",
+  "INYECCIONES",
+] as const;
+
+function isConsultaMotivo(v: string) {
+  return String(v ?? "").trim().toUpperCase() === "CONSULTA";
+}
+
+function calcAgeParts(birthDate: string | null | undefined) {
+  if (!birthDate) return null;
+
+  const birth = new Date(`${birthDate}T00:00:00`);
+  if (Number.isNaN(birth.getTime())) return null;
+
+  const now = new Date();
+
+  let years = now.getFullYear() - birth.getFullYear();
+  let months = now.getMonth() - birth.getMonth();
+
+  if (now.getDate() < birth.getDate()) {
+    months -= 1;
+  }
+
+  if (months < 0) {
+    years -= 1;
+    months += 12;
+  }
+
+  if (years < 0) return null;
+
+  return { years, months };
+}
+
+function formatFullAge(birthDate: string | null | undefined) {
+  const age = calcAgeParts(birthDate);
+  if (!age) return "";
+
+  const ya = age.years === 1 ? "año" : "años";
+  const ma = age.months === 1 ? "mes" : "meses";
+  return `${age.years} ${ya} y ${age.months} ${ma}`;
+}
 
 const form = reactive({
-  // paciente
-  expediente: "",
+  expediente: "SIN EXPEDIENTE",
   motivoUrgencia: "CONSULTA",
   patientFullName: "",
-  patientAge: null as number | null,
+  birthDate: "",
+  patientAge: null as number | null, // años enteros para backend
   sex: "M" as "M" | "F" | "O",
   responsibleName: "",
   speaksMaya: false,
+  observaciones: "",
 
   // semáforo
   appearance: "VERDE" as TriageColor,
@@ -46,27 +91,60 @@ const form = reactive({
   referralPlace: "",
 });
 
+const isConsulta = computed(() => isConsultaMotivo(form.motivoUrgencia));
+
+const agePreview = computed(() => formatFullAge(form.birthDate));
+
+watch(
+    () => form.birthDate,
+    (v) => {
+      const parts = calcAgeParts(v);
+      form.patientAge = parts ? parts.years : null;
+    },
+    { immediate: true }
+);
+
+watch(
+    () => form.motivoUrgencia,
+    (v) => {
+      if (!isConsultaMotivo(v)) {
+        form.appearance = "VERDE";
+        form.respiration = "VERDE";
+        form.circulation = "VERDE";
+
+        form.weightKg = null;
+        form.heightCm = null;
+        form.temperatureC = null;
+        form.heartRate = null;
+        form.respiratoryRate = null;
+        form.bloodPressure = "";
+
+        form.hadPriorCareSamePathology = false;
+        form.priorCarePlace = "";
+        form.hasReferral = false;
+        form.referralPlace = "";
+      }
+    }
+);
+
 const classificationPreview = computed<TriageColor>(() => {
   const rank: Record<TriageColor, number> = { VERDE: 1, AMARILLO: 2, ROJO: 3 };
   return [form.appearance, form.respiration, form.circulation].sort((a, b) => rank[a] - rank[b])[2];
 });
 
 function statusOf(r: NurseTriageRow): StatusTab {
+  if (r.closedAt || r.refusedPayment || r.noShow) return "ATENDIDO";
   if (r.medicalNote?.consultationFinishedAt) return "ATENDIDO";
   if (r.medicalNote?.consultationStartedAt) return "CONSULTA";
   return "ESPERA";
 }
-
-const filteredByStatus = computed(() => {
-  return filtered.value.filter((r) => statusOf(r) === statusTab.value);
-});
 
 function badge(c: TriageColor) {
   return c === "ROJO" ? "bg-red-600" : c === "AMARILLO" ? "bg-yellow-400 text-black" : "bg-green-600";
 }
 
 function slaMinutes(c: TriageColor) {
-  return c === "VERDE" ? 120 : c === "AMARILLO" ? 60 : 0;
+  return c === "VERDE" ? 45 : c === "AMARILLO" ? 30 : 0;
 }
 
 function payLabel(v: "PENDING" | "PAID") {
@@ -74,7 +152,6 @@ function payLabel(v: "PENDING" | "PAID") {
 }
 
 function fmtMerida(iso: string) {
-  // iso viene de MySQL/Prisma, lo convertimos a hora local. Para Mérida suele ser America/Merida.
   const d = new Date(iso);
   return new Intl.DateTimeFormat("es-MX", {
     timeZone: "America/Merida",
@@ -92,31 +169,30 @@ async function saveNew() {
   }
 
   const payload = {
-    // el backend actual acepta body directo
-    motivoUrgencia: "CONSULTA",
-    appearance: form.appearance,
-    respiration: form.respiration,
-    circulation: form.circulation,
-    classification: classificationPreview.value,
+    motivoUrgencia: form.motivoUrgencia,
+    observaciones: form.observaciones.trim() || null,
 
-    // signos vitales (triageRecord)
-    weightKg: form.weightKg,
-    heightCm: form.heightCm,
-    temperatureC: form.temperatureC,
-    heartRate: form.heartRate,
-    respiratoryRate: form.respiratoryRate,
-    bloodPressure: form.bloodPressure.trim() || null,
+    appearance: isConsulta.value ? form.appearance : "VERDE",
+    respiration: isConsulta.value ? form.respiration : "VERDE",
+    circulation: isConsulta.value ? form.circulation : "VERDE",
+    classification: isConsulta.value ? classificationPreview.value : "VERDE",
 
-    // flags
-    hadPriorCareSamePathology: form.hadPriorCareSamePathology,
-    priorCarePlace: form.hadPriorCareSamePathology ? (form.priorCarePlace.trim() || null) : null,
-    hasReferral: form.hasReferral,
-    referralPlace: form.hasReferral ? (form.referralPlace.trim() || null) : null,
+    weightKg: isConsulta.value ? form.weightKg : null,
+    heightCm: isConsulta.value ? form.heightCm : null,
+    temperatureC: isConsulta.value ? form.temperatureC : null,
+    heartRate: isConsulta.value ? form.heartRate : null,
+    respiratoryRate: isConsulta.value ? form.respiratoryRate : null,
+    bloodPressure: isConsulta.value ? (form.bloodPressure.trim() || null) : null,
 
-    // patient nested (según tu ctrl actual)
+    hadPriorCareSamePathology: isConsulta.value ? form.hadPriorCareSamePathology : false,
+    priorCarePlace: isConsulta.value && form.hadPriorCareSamePathology ? (form.priorCarePlace.trim() || null) : null,
+    hasReferral: isConsulta.value ? form.hasReferral : false,
+    referralPlace: isConsulta.value && form.hasReferral ? (form.referralPlace.trim() || null) : null,
+
     patient: {
-      expediente: form.expediente.trim() || null,
+      expediente: form.expediente.trim() || "SIN EXPEDIENTE",
       fullName: form.patientFullName.trim(),
+      birthDate: form.birthDate || null,
       age: form.patientAge,
       sex: form.sex,
       mayaHabla: form.speaksMaya,
@@ -126,23 +202,27 @@ async function saveNew() {
 
   try {
     const created = await s.createTriage(payload);
-    alert(`✅ Triage guardado. ID: ${created.id} (${created.classification})`);
+    alert(`✅ Triage guardado. ID: ${created.id}`);
 
-    // reset mínimo
-    form.expediente = "";
+    form.expediente = "SIN EXPEDIENTE";
     form.motivoUrgencia = "CONSULTA";
     form.patientFullName = "";
+    form.birthDate = "";
     form.patientAge = null;
     form.sex = "M";
     form.responsibleName = "";
     form.speaksMaya = false;
+    form.observaciones = "";
 
     form.appearance = "VERDE";
     form.respiration = "VERDE";
     form.circulation = "VERDE";
 
-    form.weightKg = form.heightCm = form.temperatureC = null;
-    form.heartRate = form.respiratoryRate = null;
+    form.weightKg = null;
+    form.heightCm = null;
+    form.temperatureC = null;
+    form.heartRate = null;
+    form.respiratoryRate = null;
     form.bloodPressure = "";
 
     form.hadPriorCareSamePathology = false;
@@ -160,9 +240,9 @@ async function saveNew() {
 
 // LISTA + REVALORACIÓN
 const q = ref("");
+
 const filtered = computed(() => {
   const term = q.value.trim().toLowerCase();
-
   const rank: Record<TriageColor, number> = { VERDE: 1, AMARILLO: 2, ROJO: 3 };
 
   return s.rows
@@ -177,12 +257,15 @@ const filtered = computed(() => {
         );
       })
       .sort((a, b) => {
-        const byClass = rank[b.classification] - rank[a.classification]; // desc
+        const byClass = rank[b.classification] - rank[a.classification];
         if (byClass !== 0) return byClass;
-        return new Date(a.triageAt).getTime() - new Date(b.triageAt).getTime(); // asc (más viejo primero)
+        return new Date(a.triageAt).getTime() - new Date(b.triageAt).getTime();
       });
 });
 
+const filteredByStatus = computed(() => {
+  return filtered.value.filter((r) => statusOf(r) === statusTab.value);
+});
 
 const showRevalue = ref(false);
 const re = reactive({
@@ -209,7 +292,13 @@ const reClassPreview = computed<TriageColor>(() => {
   return [re.appearance, re.respiration, re.circulation].sort((a, b) => rank[a] - rank[b])[2];
 });
 
+function canRevalue(row: NurseTriageRow) {
+  return statusOf(row) === "ESPERA" && isConsultaMotivo(row.motivoUrgencia);
+}
+
 function openRevalue(row: NurseTriageRow) {
+  if (!canRevalue(row)) return;
+
   s.select(row.id);
   re.id = row.id;
   re.appearance = row.appearance;
@@ -283,18 +372,11 @@ onMounted(async () => {
 onBeforeUnmount(() => {
   offA?.();
 });
-
-
-onBeforeUnmount(() => {
-  offA?.();
-  offB?.();
-});
 </script>
 
 <template>
   <div class="p-6 max-w-7xl mx-auto">
     <div class="bg-white rounded-2xl shadow p-6">
-      <!-- Header + Tabs -->
       <div class="flex items-start justify-between gap-4 mb-6">
         <div>
           <h1 class="text-2xl font-semibold">Enfermería - Triage</h1>
@@ -316,12 +398,18 @@ onBeforeUnmount(() => {
           >
             Pacientes (Lista)
           </button>
+          <button
+              class="px-4 py-2 rounded-xl border text-sm hover:bg-gray-50"
+              @click="s.openOwnReportPdf()"
+          >
+            Imprimir reporte
+          </button>
         </div>
       </div>
 
       <!-- TAB: NEW -->
       <div v-if="tab === 'NEW'">
-        <div class="flex items-center justify-between mb-4">
+        <div class="flex items-center justify-between mb-4" v-if="isConsulta">
           <div class="flex items-center gap-2">
             <span class="text-white text-xs px-2 py-1 rounded-full" :class="badge(classificationPreview)">
               {{ classificationPreview }}
@@ -340,10 +428,9 @@ onBeforeUnmount(() => {
 
           <div>
             <label class="text-sm font-medium">Motivo de urgencia *</label>
-            <input v-model="form.motivoUrgencia"
-                   class="w-full border rounded-xl p-2"
-                   disabled
-            />
+            <select v-model="form.motivoUrgencia" class="w-full border rounded-xl p-2">
+              <option v-for="m in MOTIVOS" :key="m" :value="m">{{ m }}</option>
+            </select>
           </div>
 
           <div>
@@ -353,16 +440,12 @@ onBeforeUnmount(() => {
 
           <div class="grid grid-cols-2 gap-3">
             <div>
-              <label class="text-sm font-medium">Edad</label>
-              <input v-model.number="form.patientAge" type="number" class="w-full border rounded-xl p-2" />
+              <label class="text-sm font-medium">Fecha de nacimiento</label>
+              <input v-model="form.birthDate" type="date" class="w-full border rounded-xl p-2" />
             </div>
             <div>
-              <label class="text-sm font-medium">Sexo</label>
-              <select v-model="form.sex" class="w-full border rounded-xl p-2">
-                <option value="M">M</option>
-                <option value="F">F</option>
-                <option value="O">O</option>
-              </select>
+              <label class="text-sm font-medium">Edad</label>
+              <input :value="agePreview" class="w-full border rounded-xl p-2 bg-gray-50" readonly />
             </div>
           </div>
 
@@ -371,88 +454,109 @@ onBeforeUnmount(() => {
             <input v-model="form.responsibleName" class="w-full border rounded-xl p-2" />
           </div>
 
+          <div>
+            <label class="text-sm font-medium">Sexo</label>
+            <select v-model="form.sex" class="w-full border rounded-xl p-2">
+              <option value="M">M</option>
+              <option value="F">F</option>
+              <option value="O">O</option>
+            </select>
+          </div>
+
           <div class="flex items-center gap-2 mt-6">
             <input type="checkbox" v-model="form.speaksMaya" />
             <span class="text-sm">Habla Maya</span>
           </div>
-        </div>
 
-        <TriageGuideTable class="mt-6" />
-
-        <div class="mt-6 grid grid-cols-3 gap-4">
-          <div class="border rounded-2xl p-4">
-            <div class="font-semibold mb-2">Apariencia</div>
-            <select v-model="form.appearance" class="w-full border rounded-xl p-2">
-              <option value="VERDE">Verde</option>
-              <option value="AMARILLO">Amarillo</option>
-              <option value="ROJO">Rojo</option>
-            </select>
-          </div>
-
-          <div class="border rounded-2xl p-4">
-            <div class="font-semibold mb-2">Respiración</div>
-            <select v-model="form.respiration" class="w-full border rounded-xl p-2">
-              <option value="VERDE">Verde</option>
-              <option value="AMARILLO">Amarillo</option>
-              <option value="ROJO">Rojo</option>
-            </select>
-          </div>
-
-          <div class="border rounded-2xl p-4">
-            <div class="font-semibold mb-2">Circulación</div>
-            <select v-model="form.circulation" class="w-full border rounded-xl p-2">
-              <option value="VERDE">Verde</option>
-              <option value="AMARILLO">Amarillo</option>
-              <option value="ROJO">Rojo</option>
-            </select>
+          <div class="col-span-2">
+            <label class="text-sm font-medium">Observaciones</label>
+            <textarea
+                v-model="form.observaciones"
+                class="w-full border rounded-xl p-2"
+                rows="3"
+                placeholder="Observaciones generales"
+            />
           </div>
         </div>
 
-        <div class="mt-6 border rounded-2xl p-4">
-          <div class="font-semibold mb-3">Signos vitales</div>
-          <div class="grid grid-cols-3 gap-3">
-            <input v-model.number="form.weightKg" type="number" step="0.01" class="border rounded-xl p-2" placeholder="Peso (kg)" />
-            <input v-model.number="form.heightCm" type="number" step="0.01" class="border rounded-xl p-2" placeholder="Talla (cm)" />
-            <input v-model.number="form.temperatureC" type="number" step="0.1" class="border rounded-xl p-2" placeholder="Temp (°C)" />
-            <input v-model.number="form.heartRate" type="number" class="border rounded-xl p-2" placeholder="FC" />
-            <input v-model.number="form.respiratoryRate" type="number" class="border rounded-xl p-2" placeholder="FR" />
-            <input v-model="form.bloodPressure" class="border rounded-xl p-2" placeholder="T.A. 120/80" />
-          </div>
-        </div>
+        <template v-if="isConsulta">
+          <TriageGuideTable class="mt-6" />
 
-        <div class="mt-6 border rounded-2xl p-4">
-          <div class="font-semibold mb-3">Datos adicionales</div>
-
-          <div class="grid grid-cols-2 gap-4">
+          <div class="mt-6 grid grid-cols-3 gap-4">
             <div class="border rounded-2xl p-4">
-              <div class="font-semibold mb-2">Atención previa por misma patología</div>
-              <label class="flex items-center gap-2 text-sm">
-                <input type="checkbox" v-model="form.hadPriorCareSamePathology" />
-                Sí
-              </label>
-              <input
-                  v-if="form.hadPriorCareSamePathology"
-                  v-model="form.priorCarePlace"
-                  class="mt-2 w-full border rounded-xl p-2"
-                  placeholder="Lugar de atención previa"
-              />
+              <div class="font-semibold mb-2">Apariencia</div>
+              <select v-model="form.appearance" class="w-full border rounded-xl p-2">
+                <option value="VERDE">Verde</option>
+                <option value="AMARILLO">Amarillo</option>
+                <option value="ROJO">Rojo</option>
+              </select>
             </div>
 
             <div class="border rounded-2xl p-4">
-              <div class="font-semibold mb-2">Paciente con referencia</div>
-              <label class="flex items-center gap-2 text-sm">
-                <input type="checkbox" v-model="form.hasReferral" />
-                Sí
-              </label>
-              <input
-                  v-if="form.hasReferral"
-                  v-model="form.referralPlace"
-                  class="mt-2 w-full border rounded-xl p-2"
-                  placeholder="Lugar de referencia"
-              />
+              <div class="font-semibold mb-2">Respiración</div>
+              <select v-model="form.respiration" class="w-full border rounded-xl p-2">
+                <option value="VERDE">Verde</option>
+                <option value="AMARILLO">Amarillo</option>
+                <option value="ROJO">Rojo</option>
+              </select>
+            </div>
+
+            <div class="border rounded-2xl p-4">
+              <div class="font-semibold mb-2">Circulación</div>
+              <select v-model="form.circulation" class="w-full border rounded-xl p-2">
+                <option value="VERDE">Verde</option>
+                <option value="AMARILLO">Amarillo</option>
+                <option value="ROJO">Rojo</option>
+              </select>
             </div>
           </div>
-        </div>
+
+          <div class="mt-6 border rounded-2xl p-4">
+            <div class="font-semibold mb-3">Signos vitales</div>
+            <div class="grid grid-cols-3 gap-3">
+              <input v-model.number="form.weightKg" type="number" step="0.01" class="border rounded-xl p-2" placeholder="Peso (kg)" />
+              <input v-model.number="form.heightCm" type="number" step="0.01" class="border rounded-xl p-2" placeholder="Talla (cm)" />
+              <input v-model.number="form.temperatureC" type="number" step="0.1" class="border rounded-xl p-2" placeholder="Temp (°C)" />
+              <input v-model.number="form.heartRate" type="number" class="border rounded-xl p-2" placeholder="FC" />
+              <input v-model.number="form.respiratoryRate" type="number" class="border rounded-xl p-2" placeholder="FR" />
+              <input v-model="form.bloodPressure" class="border rounded-xl p-2" placeholder="T.A. 120/80" />
+            </div>
+          </div>
+
+          <div class="mt-6 border rounded-2xl p-4">
+            <div class="font-semibold mb-3">Datos adicionales</div>
+
+            <div class="grid grid-cols-2 gap-4">
+              <div class="border rounded-2xl p-4">
+                <div class="font-semibold mb-2">Atención previa por misma patología</div>
+                <label class="flex items-center gap-2 text-sm">
+                  <input type="checkbox" v-model="form.hadPriorCareSamePathology" />
+                  Sí
+                </label>
+                <input
+                    v-if="form.hadPriorCareSamePathology"
+                    v-model="form.priorCarePlace"
+                    class="mt-2 w-full border rounded-xl p-2"
+                    placeholder="Lugar de atención previa"
+                />
+              </div>
+
+              <div class="border rounded-2xl p-4">
+                <div class="font-semibold mb-2">Paciente con referencia</div>
+                <label class="flex items-center gap-2 text-sm">
+                  <input type="checkbox" v-model="form.hasReferral" />
+                  Sí
+                </label>
+                <input
+                    v-if="form.hasReferral"
+                    v-model="form.referralPlace"
+                    class="mt-2 w-full border rounded-xl p-2"
+                    placeholder="Lugar de referencia"
+                />
+              </div>
+            </div>
+          </div>
+        </template>
 
         <div class="mt-6 flex justify-end">
           <button
@@ -486,19 +590,24 @@ onBeforeUnmount(() => {
 
         <div class="overflow-auto border rounded-2xl">
           <div class="flex gap-2 mb-3">
-            <button class="px-3 py-2 rounded-xl border text-sm"
-                    :class="statusTab==='ESPERA' ? 'bg-blue-50 border-blue-200 text-blue-700' : 'hover:bg-gray-50'"
-                    @click="statusTab='ESPERA'">EN ESPERA</button>
+            <button
+                class="px-3 py-2 rounded-xl border text-sm"
+                :class="statusTab==='ESPERA' ? 'bg-blue-50 border-blue-200 text-blue-700' : 'hover:bg-gray-50'"
+                @click="statusTab='ESPERA'"
+            >EN ESPERA</button>
 
-            <button class="px-3 py-2 rounded-xl border text-sm"
-                    :class="statusTab==='CONSULTA' ? 'bg-blue-50 border-blue-200 text-blue-700' : 'hover:bg-gray-50'"
-                    @click="statusTab='CONSULTA'">EN CONSULTA</button>
+            <button
+                class="px-3 py-2 rounded-xl border text-sm"
+                :class="statusTab==='CONSULTA' ? 'bg-blue-50 border-blue-200 text-blue-700' : 'hover:bg-gray-50'"
+                @click="statusTab='CONSULTA'"
+            >EN CONSULTA</button>
 
-            <button class="px-3 py-2 rounded-xl border text-sm"
-                    :class="statusTab==='ATENDIDO' ? 'bg-blue-50 border-blue-200 text-blue-700' : 'hover:bg-gray-50'"
-                    @click="statusTab='ATENDIDO'">ATENDIDO</button>
+            <button
+                class="px-3 py-2 rounded-xl border text-sm"
+                :class="statusTab==='ATENDIDO' ? 'bg-blue-50 border-blue-200 text-blue-700' : 'hover:bg-gray-50'"
+                @click="statusTab='ATENDIDO'"
+            >ATENDIDO</button>
           </div>
-
 
           <table class="w-full text-sm">
             <thead class="bg-gray-50">
@@ -513,15 +622,16 @@ onBeforeUnmount(() => {
               <th class="py-2 px-3">Acciones</th>
             </tr>
             </thead>
+
             <tbody>
             <tr v-for="r in filteredByStatus" :key="r.id" class="border-b">
               <td class="py-2 px-3">{{ r.id }}</td>
               <td class="py-2 px-3">{{ fmtMerida(r.triageAt) }}</td>
-              <td class="py-2 px-3">{{ r.patient.expediente || "-" }}</td>
+              <td class="py-2 px-3">{{ r.patient.expediente || "SIN EXPEDIENTE" }}</td>
               <td class="py-2 px-3">
                 <div class="font-medium">{{ r.patient.fullName }}</div>
                 <div class="text-xs text-gray-500">
-                  {{ r.patient.age ?? "-" }} años · {{ r.patient.sex ?? "-" }}
+                  {{ r.patient.age || "-" }} · {{ r.patient.sex ?? "-" }}
                   <span v-if="r.patient.mayaHabla">· Maya</span>
                   <span v-if="r.patient.responsibleName">· Resp: {{ r.patient.responsibleName }}</span>
                 </div>
@@ -543,13 +653,14 @@ onBeforeUnmount(() => {
               <td class="py-2 px-3">
                 <button
                     class="px-3 py-1 rounded-xl border text-xs hover:bg-gray-50 disabled:opacity-50"
-                    :disabled="statusOf(r) !== 'ESPERA'"
+                    :disabled="!canRevalue(r)"
                     @click="openRevalue(r)"
                 >
                   Revalorar
                 </button>
               </td>
             </tr>
+
             <tr v-if="!filteredByStatus.length">
               <td colspan="8" class="py-6 text-center text-gray-500">Sin registros</td>
             </tr>

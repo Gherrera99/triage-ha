@@ -87,12 +87,12 @@
 
           <tr>
             <td class="border bg-green-200 px-3 py-3 align-top">
-              Atención según disponibilidad del servicio, hasta 120 minutos de tiempo de espera,
+              Atención según disponibilidad del servicio, hasta 45 minutos de tiempo de espera,
               puede ser referido a su CS en caso necesario.
             </td>
             <td class="border bg-yellow-200 px-3 py-3 align-top">
               Se actúa según el caso: pasa a consultorio o cama de observación, se toman signos vitales,
-              tiene atención prioritaria, la respuesta debe ser de 15 a 60 minutos.
+              tiene atención prioritaria, la respuesta debe ser de 15 a 30 minutos.
             </td>
             <td class="border bg-red-200 px-3 py-3 align-top">
               Eventos que ponen en peligro su vida. Ingresa a cama de choque o reanimación para atención inmediata.
