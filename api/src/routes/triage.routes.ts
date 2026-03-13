@@ -10,6 +10,7 @@ import {
     listWaitingForDoctor,
     listMyConsultations,
     listMyAttended,
+    listCancelledForDoctor,
     getDoctorTriageDetail,
     nurseOwnReport
 } from "../controllers/triage.ctrl";
@@ -25,4 +26,5 @@ triageRouter.put("/:id/revalue", requireAuth, requireRole(["NURSE_TRIAGE"]), rev
 triageRouter.get("/doctor/waiting", requireAuth, requireRole(["DOCTOR"]), listWaitingForDoctor);
 triageRouter.get("/doctor/consulting", requireAuth, requireRole("DOCTOR"), listMyConsultations);
 triageRouter.get("/doctor/attended", requireAuth, requireRole("DOCTOR"), listMyAttended);
+triageRouter.get("/doctor/cancelled", requireAuth, requireRole("DOCTOR"), listCancelledForDoctor);
 triageRouter.get("/doctor/:triageId/detail", requireAuth, requireRole("DOCTOR"), getDoctorTriageDetail);

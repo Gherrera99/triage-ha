@@ -8,6 +8,9 @@ r.get("/attended", requireAuth, requireRole(["ADMIN", "CONSULTOR"]), adminReport
 r.get("/attended/:id", requireAuth, requireRole(["ADMIN", "CONSULTOR"]), adminReportsCtrl.getDetail);
 r.put("/attended/:id", requireAuth, requireRole(["ADMIN"]), adminReportsCtrl.updateDetail);
 
+// cancelados (no-show + no quiso pagar)
+r.get("/cancelled", requireAuth, requireRole(["ADMIN", "CONSULTOR"]), adminReportsCtrl.listCancelled);
+
 // export
 r.get("/attended-excel", requireAuth, requireRole(["ADMIN", "CONSULTOR"]), adminReportsCtrl.exportExcel);
 

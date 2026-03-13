@@ -4,7 +4,7 @@ import { api } from "../services/api";
 import { getSocket } from "../services/socket";
 
 type Row = any;
-type Tab = "WAITING" | "CONSULTING" | "ATTENDED";
+type Tab = "WAITING" | "CONSULTING" | "ATTENDED" | "CANCELLED";
 
 const emptyNote = () => ({
     padecimientoActual: "",
@@ -41,6 +41,7 @@ export const useDoctorStore = defineStore("doctor", {
         waiting: [] as Row[],
         consulting: [] as Row[],
         attended: [] as Row[],
+        cancelled: [] as Row[],
 
         selected: null as Row | null,
         detail: null as Row | null,
@@ -106,6 +107,7 @@ export const useDoctorStore = defineStore("doctor", {
 
             const onTriageUpdated = () => {
                 if (this.tab === "WAITING") this.fetchWaiting();
+                if (this.tab === "CANCELLED") this.fetchCancelled();
             };
 
             s.on("payment:paid", onPaid);
@@ -141,11 +143,15 @@ export const useDoctorStore = defineStore("doctor", {
             const { data } = await api.get("/triage/doctor/attended");
             this.attended = (data ?? []).filter((r: any) => this.isWithin24h(r.triageAt));
         },
+        async fetchCancelled() {
+            const { data } = await api.get("/triage/doctor/cancelled");
+            this.cancelled = (data ?? []).filter((r: any) => this.isWithin24h(r.triageAt));
+        },
 
         async refreshAll() {
             this.loading = true;
             try {
-                await Promise.all([this.fetchWaiting(), this.fetchConsulting(), this.fetchAttended()]);
+                await Promise.all([this.fetchWaiting(), this.fetchConsulting(), this.fetchAttended(), this.fetchCancelled()]);
             } finally {
                 this.loading = false;
             }

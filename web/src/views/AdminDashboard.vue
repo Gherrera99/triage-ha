@@ -65,9 +65,19 @@ onMounted(async () => {
   <div class="p-6 max-w-7xl mx-auto">
     <div class="bg-white rounded-2xl shadow p-6">
       <div class="flex items-center justify-between mb-4">
-        <h1 class="text-2xl font-semibold">Administrador</h1>
+        <div class="flex items-center gap-4">
+          <h1 class="text-2xl font-semibold">Administrador</h1>
+          <div class="flex gap-2">
+            <button class="px-3 py-2 rounded-xl border text-sm"
+                    :class="a.tab==='ATTENDED' ? 'bg-blue-50 border-blue-200 text-blue-700' : 'hover:bg-gray-50'"
+                    @click="a.tab='ATTENDED'; a.fetch()">ATENDIDOS</button>
+            <button class="px-3 py-2 rounded-xl border text-sm"
+                    :class="a.tab==='CANCELLED' ? 'bg-red-50 border-red-200 text-red-700' : 'hover:bg-gray-50'"
+                    @click="a.tab='CANCELLED'; a.fetchCancelled()">NO ATENDIDOS</button>
+          </div>
+        </div>
         <div class="flex gap-2">
-          <button class="px-4 py-2 rounded-xl border" @click="a.fetch">Refrescar</button>
+          <button class="px-4 py-2 rounded-xl border" @click="a.tab==='ATTENDED' ? a.fetch() : a.fetchCancelled()">Refrescar</button>
           <button class="px-4 py-2 rounded-xl bg-emerald-600 text-white" @click="a.exportExcel">Exportar Excel</button>
         </div>
       </div>
@@ -86,68 +96,121 @@ onMounted(async () => {
         <input v-model="a.startDate" type="date" class="col-span-2 border rounded-xl p-2" />
         <input v-model="a.endDate" type="date" class="col-span-2 border rounded-xl p-2" />
 
-        <button class="col-span-2 px-4 py-2 rounded-xl bg-blue-600 text-white" @click="a.fetch">
+        <button class="col-span-2 px-4 py-2 rounded-xl bg-blue-600 text-white" @click="a.tab==='ATTENDED' ? a.fetch() : a.fetchCancelled()">
           Aplicar
         </button>
       </div>
 
-      <!-- KPI -->
-      <div v-if="a.kpi" class="grid grid-cols-3 gap-3 mb-5">
-        <div class="border rounded-2xl p-4">
-          <div class="font-semibold">VERDE</div>
-          <div class="text-sm text-gray-600">Cumple SLA: {{ a.kpi.VERDE.ok }}/{{ a.kpi.VERDE.total }} ({{ a.kpi.VERDE.pct }}%)</div>
+      <!-- TAB ATENDIDOS -->
+      <template v-if="a.tab==='ATTENDED'">
+        <!-- KPI -->
+        <div v-if="a.kpi" class="grid grid-cols-3 gap-3 mb-5">
+          <div class="border rounded-2xl p-4">
+            <div class="font-semibold">VERDE</div>
+            <div class="text-sm text-gray-600">Cumple SLA: {{ a.kpi.VERDE.ok }}/{{ a.kpi.VERDE.total }} ({{ a.kpi.VERDE.pct }}%)</div>
+          </div>
+          <div class="border rounded-2xl p-4">
+            <div class="font-semibold">AMARILLO</div>
+            <div class="text-sm text-gray-600">Cumple SLA: {{ a.kpi.AMARILLO.ok }}/{{ a.kpi.AMARILLO.total }} ({{ a.kpi.AMARILLO.pct }}%)</div>
+          </div>
+          <div class="border rounded-2xl p-4">
+            <div class="font-semibold">ROJO</div>
+            <div class="text-sm text-gray-600">Cumple SLA: {{ a.kpi.ROJO.ok }}/{{ a.kpi.ROJO.total }} ({{ a.kpi.ROJO.pct }}%)</div>
+          </div>
         </div>
-        <div class="border rounded-2xl p-4">
-          <div class="font-semibold">AMARILLO</div>
-          <div class="text-sm text-gray-600">Cumple SLA: {{ a.kpi.AMARILLO.ok }}/{{ a.kpi.AMARILLO.total }} ({{ a.kpi.AMARILLO.pct }}%)</div>
-        </div>
-        <div class="border rounded-2xl p-4">
-          <div class="font-semibold">ROJO</div>
-          <div class="text-sm text-gray-600">Cumple SLA: {{ a.kpi.ROJO.ok }}/{{ a.kpi.ROJO.total }} ({{ a.kpi.ROJO.pct }}%)</div>
-        </div>
-      </div>
 
-      <!-- tabla -->
-      <div class="overflow-auto border rounded-2xl">
-        <table class="w-full text-sm">
-          <thead class="bg-gray-50">
-          <tr class="text-left border-b">
-            <th class="py-2 px-3">ID</th>
-            <th class="py-2 px-3">Expediente</th>
-            <th class="py-2 px-3">Paciente</th>
-            <th class="py-2 px-3">Clasif.</th>
-            <th class="py-2 px-3">Enfermero</th>
-            <th class="py-2 px-3">Médico</th>
-            <th class="py-2 px-3">Registro</th>
-            <th class="py-2 px-3">Inicio consulta</th>
-            <th class="py-2 px-3">Acción</th>
-          </tr>
-          </thead>
+        <!-- tabla atendidos -->
+        <div class="overflow-auto border rounded-2xl">
+          <table class="w-full text-sm">
+            <thead class="bg-gray-50">
+            <tr class="text-left border-b">
+              <th class="py-2 px-3">ID</th>
+              <th class="py-2 px-3">Expediente</th>
+              <th class="py-2 px-3">Paciente</th>
+              <th class="py-2 px-3">Clasif.</th>
+              <th class="py-2 px-3">Enfermero</th>
+              <th class="py-2 px-3">Medico</th>
+              <th class="py-2 px-3">Registro</th>
+              <th class="py-2 px-3">Inicio consulta</th>
+              <th class="py-2 px-3">Accion</th>
+            </tr>
+            </thead>
 
-          <tbody>
-          <tr v-for="r in a.rows" :key="r.id" class="border-b">
-            <td class="py-2 px-3">{{ r.id }}</td>
-            <td class="py-2 px-3">{{ r.patient?.expediente || "-" }}</td>
-            <td class="py-2 px-3">{{ r.patient?.fullName }}</td>
-            <td class="py-2 px-3">
-              <span class="text-white text-xs px-2 py-1 rounded-full" :class="badge(r.classification)">
-                {{ r.classification }}
-              </span>
-            </td>
-            <td class="py-2 px-3">{{ r.nurse?.name }}</td>
-            <td class="py-2 px-3">{{ r.medicalNote?.doctor?.name || "-" }}</td>
-            <td class="py-2 px-3">{{ fmtMerida(r.triageAt) }}</td>
-            <td class="py-2 px-3">{{ r.medicalNote?.consultationStartedAt ? fmtMerida(r.medicalNote.consultationStartedAt) : "-" }}</td>
-            <td class="py-2 px-3">
-              <button class="px-3 py-1 rounded-xl border text-xs" @click="a.open(r.id)">Ver / Editar</button>
-            </td>
-          </tr>
-          <tr v-if="!a.rows.length">
-            <td colspan="9" class="py-8 text-center text-gray-500">Sin registros</td>
-          </tr>
-          </tbody>
-        </table>
-      </div>
+            <tbody>
+            <tr v-for="r in a.rows" :key="r.id" class="border-b">
+              <td class="py-2 px-3">{{ r.id }}</td>
+              <td class="py-2 px-3">{{ r.patient?.expediente || "-" }}</td>
+              <td class="py-2 px-3">{{ r.patient?.fullName }}</td>
+              <td class="py-2 px-3">
+                <span class="text-white text-xs px-2 py-1 rounded-full" :class="badge(r.classification)">
+                  {{ r.classification }}
+                </span>
+              </td>
+              <td class="py-2 px-3">{{ r.nurse?.name }}</td>
+              <td class="py-2 px-3">{{ r.medicalNote?.doctor?.name || "-" }}</td>
+              <td class="py-2 px-3">{{ fmtMerida(r.triageAt) }}</td>
+              <td class="py-2 px-3">{{ r.medicalNote?.consultationStartedAt ? fmtMerida(r.medicalNote.consultationStartedAt) : "-" }}</td>
+              <td class="py-2 px-3">
+                <button class="px-3 py-1 rounded-xl border text-xs" @click="a.open(r.id)">Ver / Editar</button>
+              </td>
+            </tr>
+            <tr v-if="!a.rows.length">
+              <td colspan="9" class="py-8 text-center text-gray-500">Sin registros</td>
+            </tr>
+            </tbody>
+          </table>
+        </div>
+      </template>
+
+      <!-- TAB NO ATENDIDOS -->
+      <template v-else>
+        <div class="overflow-auto border rounded-2xl">
+          <table class="w-full text-sm">
+            <thead class="bg-gray-50">
+            <tr class="text-left border-b">
+              <th class="py-2 px-3">ID</th>
+              <th class="py-2 px-3">Fecha/Hora</th>
+              <th class="py-2 px-3">Expediente</th>
+              <th class="py-2 px-3">Paciente</th>
+              <th class="py-2 px-3">Motivo</th>
+              <th class="py-2 px-3">Clasif.</th>
+              <th class="py-2 px-3">Enfermero</th>
+              <th class="py-2 px-3">Razon</th>
+              <th class="py-2 px-3">Detalle</th>
+              <th class="py-2 px-3">Fecha cierre</th>
+            </tr>
+            </thead>
+
+            <tbody>
+            <tr v-for="r in a.cancelledRows" :key="r.id" class="border-b">
+              <td class="py-2 px-3">{{ r.id }}</td>
+              <td class="py-2 px-3">{{ fmtMerida(r.triageAt) }}</td>
+              <td class="py-2 px-3">{{ r.patient?.expediente || "-" }}</td>
+              <td class="py-2 px-3">{{ r.patient?.fullName }}</td>
+              <td class="py-2 px-3">{{ r.motivoUrgencia }}</td>
+              <td class="py-2 px-3">
+                <span class="text-white text-xs px-2 py-1 rounded-full" :class="badge(r.classification)">
+                  {{ r.classification }}
+                </span>
+              </td>
+              <td class="py-2 px-3">{{ r.nurse?.name }}</td>
+              <td class="py-2 px-3">
+                <span v-if="r.noShow" class="text-red-600 text-xs font-medium">No se presento</span>
+                <span v-else-if="r.refusedPayment" class="text-red-600 text-xs font-medium">No quiso pagar</span>
+              </td>
+              <td class="py-2 px-3 text-xs text-gray-600">
+                <span v-if="r.noShowReason">{{ r.noShowReason }}</span>
+                <span v-if="r.noShowDoctor" class="block text-gray-400">Dr. {{ r.noShowDoctor.name }}</span>
+              </td>
+              <td class="py-2 px-3">{{ r.closedAt ? fmtMerida(r.closedAt) : '-' }}</td>
+            </tr>
+            <tr v-if="!a.cancelledRows.length">
+              <td colspan="10" class="py-8 text-center text-gray-500">Sin registros de pacientes no atendidos</td>
+            </tr>
+            </tbody>
+          </table>
+        </div>
+      </template>
     </div>
 
     <!-- MODAL -->
