@@ -98,6 +98,10 @@ onBeforeUnmount(() => d.disposeRealtime());
           <button class="px-3 py-2 rounded-xl border text-sm"
                   :class="d.tab==='ATTENDED' ? 'bg-blue-50 border-blue-200 text-blue-700' : 'hover:bg-gray-50'"
                   @click="d.tab='ATTENDED'">ATENDIDO</button>
+
+          <button class="px-3 py-2 rounded-xl border text-sm"
+                  :class="d.tab==='CANCELLED' ? 'bg-red-50 border-red-200 text-red-700' : 'hover:bg-gray-50'"
+                  @click="d.tab='CANCELLED'">NO ATENDIDO</button>
         </div>
       </div>
 
@@ -141,7 +145,7 @@ onBeforeUnmount(() => d.disposeRealtime());
           <div v-if="!d.consulting.length" class="text-gray-500 text-sm">No tienes consultas en curso.</div>
         </template>
 
-        <template v-else>
+        <template v-else-if="d.tab==='ATTENDED'">
           <div v-for="r in d.attended" :key="r.id" class="p-4 rounded-2xl border">
             <div class="flex justify-between items-center">
               <div>
@@ -154,7 +158,28 @@ onBeforeUnmount(() => d.disposeRealtime());
             </div>
           </div>
 
-          <div v-if="!d.attended.length" class="text-gray-500 text-sm">Aún no tienes pacientes atendidos.</div>
+          <div v-if="!d.attended.length" class="text-gray-500 text-sm">Aun no tienes pacientes atendidos.</div>
+        </template>
+
+        <template v-else>
+          <div v-for="r in d.cancelled" :key="r.id" class="p-4 rounded-2xl border border-red-100">
+            <div class="flex justify-between items-center">
+              <div>
+                <div class="font-semibold">{{ r.patient.fullName }}</div>
+                <div class="text-xs text-gray-500">Triage: {{ fmt(r.triageAt) }}</div>
+                <div class="text-xs mt-1">
+                  <span v-if="r.noShow" class="text-red-600 font-medium">No se presento</span>
+                  <span v-else-if="r.refusedPayment" class="text-red-600 font-medium">No quiso pagar</span>
+                </div>
+                <div v-if="r.noShowReason" class="text-xs text-gray-500 mt-1">Razon: {{ r.noShowReason }}</div>
+              </div>
+              <div class="text-xs text-gray-400">
+                {{ r.closedAt ? fmt(r.closedAt) : '' }}
+              </div>
+            </div>
+          </div>
+
+          <div v-if="!d.cancelled.length" class="text-gray-500 text-sm">Sin pacientes no atendidos.</div>
         </template>
       </div>
     </div>

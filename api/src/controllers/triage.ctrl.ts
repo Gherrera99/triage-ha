@@ -411,6 +411,30 @@ export async function listMyAttended(req: Request, res: Response) {
     res.json(rows);
 }
 
+// ✅ Pacientes cancelados para el doctor (no-show o no quiso pagar) — 24hrs
+export async function listCancelledForDoctor(req: Request, res: Response) {
+    const { start, end } = last24HoursRange();
+
+    const rows = await prisma.triageRecord.findMany({
+        where: {
+            triageAt: { gte: start, lte: end },
+            OR: [
+                { noShow: true },
+                { refusedPayment: true },
+            ],
+        },
+        orderBy: [{ triageAt: "desc" }],
+        include: {
+            patient: true,
+            nurse: { select: { name: true } },
+            noShowDoctor: { select: { name: true } },
+        },
+        take: 300,
+    });
+
+    res.json(rows);
+}
+
 export async function getDoctorTriageDetail(req: Request, res: Response) {
     const triageId = Number(req.params.triageId);
 

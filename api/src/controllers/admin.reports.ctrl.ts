@@ -144,6 +144,46 @@ function vigilanciaToText(v: any) {
     return out.join(", ");
 }
 
+// ✅ Filtro para cancelados (no-show + no quiso pagar)
+function buildWhereCancelled(query: any) {
+    const { startDate, endDate, q, classification } = query as {
+        startDate?: string;
+        endDate?: string;
+        q?: string;
+        classification?: "VERDE" | "AMARILLO" | "ROJO";
+    };
+
+    const { start, end } = parseRange(startDate, endDate);
+
+    const term = (q ?? "").trim();
+    const where: any = {
+        triageAt: { gte: start, lte: end },
+        OR: [
+            { noShow: true },
+            { refusedPayment: true },
+        ],
+    };
+
+    if (classification) where.classification = classification;
+
+    if (term) {
+        // cuando hay OR de cancelados + OR de busqueda, usamos AND
+        where.AND = [
+            { OR: where.OR },
+            {
+                OR: [
+                    { patient: { is: { fullName: { contains: term, mode: "insensitive" } } } },
+                    { patient: { is: { expediente: { contains: term, mode: "insensitive" } } } },
+                    ...(Number.isFinite(Number(term)) ? [{ id: Number(term) }] : []),
+                ],
+            },
+        ];
+        delete where.OR;
+    }
+
+    return where;
+}
+
 export const adminReportsCtrl = {
     // ✅ Lista atendidos + KPI
     listAttended: async (req: Request, res: Response) => {
@@ -486,5 +526,24 @@ export const adminReportsCtrl = {
         res.setHeader("Content-Disposition", `attachment; filename="reporte_admin.xlsx"`);
         await wb.xlsx.write(res);
         res.end();
+    },
+
+    // ✅ Lista cancelados (no-show + no quiso pagar)
+    listCancelled: async (req: Request, res: Response) => {
+        const where = buildWhereCancelled(req.query);
+
+        const rows = await prisma.triageRecord.findMany({
+            where,
+            orderBy: [{ triageAt: "desc" }],
+            include: {
+                patient: true,
+                nurse: { select: { id: true, name: true } },
+                payment: { include: { cashier: { select: { id: true, name: true } } } },
+                noShowDoctor: { select: { id: true, name: true } },
+            },
+            take: 2000,
+        });
+
+        res.json({ rows });
     },
 };

@@ -9,7 +9,7 @@ const s = useTriageNurseStore();
 type Tab = "NEW" | "LIST";
 const tab = ref<Tab>("NEW");
 
-type StatusTab = "ESPERA" | "CONSULTA" | "ATENDIDO";
+type StatusTab = "ESPERA" | "CONSULTA" | "ATENDIDO" | "NO_ATENDIDO";
 const statusTab = ref<StatusTab>("ESPERA");
 
 const { socket } = useSocket();
@@ -133,7 +133,8 @@ const classificationPreview = computed<TriageColor>(() => {
 });
 
 function statusOf(r: NurseTriageRow): StatusTab {
-  if (r.closedAt || r.refusedPayment || r.noShow) return "ATENDIDO";
+  if (r.refusedPayment || r.noShow) return "NO_ATENDIDO";
+  if (r.closedAt && !r.medicalNote?.consultationFinishedAt) return "ATENDIDO";
   if (r.medicalNote?.consultationFinishedAt) return "ATENDIDO";
   if (r.medicalNote?.consultationStartedAt) return "CONSULTA";
   return "ESPERA";
@@ -607,6 +608,12 @@ onBeforeUnmount(() => {
                 :class="statusTab==='ATENDIDO' ? 'bg-blue-50 border-blue-200 text-blue-700' : 'hover:bg-gray-50'"
                 @click="statusTab='ATENDIDO'"
             >ATENDIDO</button>
+
+            <button
+                class="px-3 py-2 rounded-xl border text-sm"
+                :class="statusTab==='NO_ATENDIDO' ? 'bg-red-50 border-red-200 text-red-700' : 'hover:bg-gray-50'"
+                @click="statusTab='NO_ATENDIDO'"
+            >NO ATENDIDO</button>
           </div>
 
           <table class="w-full text-sm">

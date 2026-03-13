@@ -51,10 +51,16 @@ function normalizeSelected(row: any) {
     return row;
 }
 
+type AdminTab = "ATTENDED" | "CANCELLED";
+
 export const useAdminReportsStore = defineStore("adminReports", {
     state: () => ({
+        tab: "ATTENDED" as AdminTab,
+
         rows: [] as any[],
         kpi: null as any | null,
+
+        cancelledRows: [] as any[],
 
         q: "",
         classification: "" as "" | "VERDE" | "AMARILLO" | "ROJO",
@@ -89,6 +95,23 @@ export const useAdminReportsStore = defineStore("adminReports", {
                 });
                 this.rows = data.rows;
                 this.kpi = data.kpi;
+            } finally {
+                this.loading = false;
+            }
+        },
+
+        async fetchCancelled() {
+            this.loading = true;
+            try {
+                const { data } = await api.get("/admin-reports/cancelled", {
+                    params: {
+                        q: this.q || undefined,
+                        classification: this.classification || undefined,
+                        startDate: this.startDate || undefined,
+                        endDate: this.endDate || undefined,
+                    },
+                });
+                this.cancelledRows = data.rows;
             } finally {
                 this.loading = false;
             }
