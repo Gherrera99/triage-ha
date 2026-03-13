@@ -186,6 +186,55 @@ export async function getPdf(req: Request, res: Response) {
     buildTriagePdf(triage, res);
 }
 
+// ✅ NUEVO: doctor marca "No se presentó al llamado"
+export async function markNoShow(req: Request, res: Response) {
+    const doctor = (req as any).user;
+    const triageId = Number(req.params.triageId);
+    const reason = String(req.body?.reason ?? "").trim();
+
+    if (!reason) {
+        return res.status(400).json({ error: "La justificación es requerida" });
+    }
+
+    try {
+        const result = await prisma.$transaction(async (tx) => {
+            const triage = await tx.triageRecord.findUnique({
+                where: { id: triageId },
+                include: { patient: true, nurse: { select: { id: true, name: true } } },
+            });
+
+            if (!triage) throw Object.assign(new Error("No existe triage"), { status: 404 });
+
+            // si ya está cerrado, idempotente
+            if (triage.closedAt || triage.noShow) return triage;
+
+            const now = new Date();
+
+            return tx.triageRecord.update({
+                where: { id: triageId },
+                data: {
+                    noShow: true,
+                    noShowReason: reason,
+                    noShowAt: now,
+                    noShowDoctorId: doctor.id,
+                    closedAt: now,
+                    closedReason: "NO_SHOW",
+                },
+                include: { patient: true, nurse: { select: { id: true, name: true } } },
+            });
+        });
+
+        emitToRole("DOCTOR", "triage:updated", result);
+        emitToRole("NURSE_TRIAGE", "triage:updated", result);
+        emitToRole("CASHIER", "triage:updated", result);
+
+        res.json(result);
+    } catch (e: any) {
+        const status = e?.status || 500;
+        res.status(status).json({ error: e?.message || "Error marcando no-show" });
+    }
+}
+
 export async function finishConsultation(req: Request, res: Response) {
     const doctor = (req as any).user;
     const triageId = Number(req.params.triageId);

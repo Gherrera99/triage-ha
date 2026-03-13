@@ -1,7 +1,7 @@
 services:
   mysql:
     image: mysql:8.0
-    container_name: triage-mysql
+    container_name: triage-mysql-v2
     environment:
       MYSQL_ROOT_PASSWORD: root
       MYSQL_DATABASE: triage_db
@@ -15,7 +15,7 @@ services:
 
   adminer:
     image: adminer:latest
-    container_name: triage-adminer
+    container_name: triage-adminer-v2
     ports:
       - "8080:8080"
     depends_on:
@@ -23,7 +23,7 @@ services:
 
   api:
     build: ./api
-    container_name: triage-api
+    container_name: triage-api-v2
     env_file:
       - ./api/.env
     ports:
@@ -37,7 +37,7 @@ services:
 
   web:
     build: ./web
-    container_name: triage-web
+    container_name: triage-web-v2
     env_file:
       - ./web/.env
     ports:

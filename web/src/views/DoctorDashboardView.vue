@@ -9,6 +9,34 @@ const router = useRouter();
 const showModal = ref(false);
 const modalLoading = ref(false);
 
+// modal no-show
+const noShowModal = ref(false);
+const noShowRow = ref<any>(null);
+const noShowReason = ref("");
+const noShowLoading = ref(false);
+
+function openNoShow(r: any) {
+  noShowRow.value = r;
+  noShowReason.value = "";
+  noShowModal.value = true;
+}
+
+async function confirmNoShow() {
+  if (!noShowRow.value || !noShowReason.value.trim()) return;
+  noShowLoading.value = true;
+  try {
+    await d.markNoShow(noShowRow.value.id, noShowReason.value.trim());
+    noShowModal.value = false;
+    noShowRow.value = null;
+    noShowReason.value = "";
+    alert("Paciente marcado como 'No se presento al llamado'. El flujo quedo cerrado.");
+  } catch (e: any) {
+    alert(`Error: ${e?.response?.data?.error || e.message || "Desconocido"}`);
+  } finally {
+    noShowLoading.value = false;
+  }
+}
+
 function fmt(iso: string) {
   const dt = new Date(iso);
   return new Intl.DateTimeFormat("es-MX", {
@@ -76,15 +104,23 @@ onBeforeUnmount(() => d.disposeRealtime());
       <!-- LISTAS -->
       <div class="grid grid-cols-1 gap-3">
         <template v-if="d.tab==='WAITING'">
-          <button v-for="r in d.waiting" :key="r.id"
-                  class="text-left p-4 rounded-2xl border hover:bg-gray-50"
-                  @click="openDetail(r)">
-            <div class="flex justify-between">
-              <div class="font-semibold">{{ r.patient.fullName }}</div>
-              <div class="font-semibold" :class="colorClass(r.classification)">{{ r.classification }}</div>
+          <div v-for="r in d.waiting" :key="r.id" class="p-4 rounded-2xl border hover:bg-gray-50">
+            <div class="flex justify-between items-start">
+              <button class="text-left flex-1" @click="openDetail(r)">
+                <div class="flex justify-between">
+                  <div class="font-semibold">{{ r.patient.fullName }}</div>
+                  <div class="font-semibold" :class="colorClass(r.classification)">{{ r.classification }}</div>
+                </div>
+                <div class="text-xs text-gray-500">Triage: {{ fmt(r.triageAt) }} · Enfermero: {{ r.nurse?.name }}</div>
+              </button>
+              <button
+                class="ml-3 px-3 py-1 rounded-xl border text-xs hover:bg-red-50 text-red-700 border-red-200 shrink-0"
+                @click.stop="openNoShow(r)"
+              >
+                No se presento
+              </button>
             </div>
-            <div class="text-xs text-gray-500">Triage: {{ fmt(r.triageAt) }} · Enfermero: {{ r.nurse?.name }}</div>
-          </button>
+          </div>
 
           <div v-if="!d.waiting.length" class="text-gray-500 text-sm">Sin pacientes en espera.</div>
         </template>
@@ -175,6 +211,43 @@ onBeforeUnmount(() => d.disposeRealtime());
               Iniciar consulta
             </button>
           </div>
+        </div>
+      </div>
+    </div>
+    <!-- Modal no se presento al llamado -->
+    <div v-if="noShowModal" class="fixed inset-0 bg-black/30 flex items-center justify-center p-6 z-40"
+         @click.self="noShowModal=false">
+      <div class="bg-white w-full max-w-md rounded-2xl shadow p-6">
+        <div class="text-lg font-semibold mb-1 text-red-700">No se presento al llamado</div>
+        <div class="text-sm text-gray-500 mb-4">
+          Triage ID: {{ noShowRow?.id }} · {{ noShowRow?.patient?.fullName }}
+        </div>
+
+        <div class="text-sm text-gray-700 bg-red-50 border border-red-200 rounded-xl p-3 mb-4">
+          Esta accion cerrara el flujo del paciente. Ya no aparecera en la lista de espera.
+        </div>
+
+        <div class="mb-4">
+          <label class="text-sm font-medium">Justificacion *</label>
+          <textarea
+            v-model="noShowReason"
+            class="mt-1 w-full border rounded-xl p-2 text-sm"
+            rows="3"
+            placeholder="Describa la razon por la que el paciente no se presento..."
+          ></textarea>
+        </div>
+
+        <div class="flex justify-end gap-2">
+          <button class="px-4 py-2 rounded-xl border text-sm hover:bg-gray-50" @click="noShowModal=false">
+            Cancelar
+          </button>
+          <button
+            class="px-4 py-2 rounded-xl bg-red-600 text-white text-sm disabled:opacity-50"
+            :disabled="noShowLoading || !noShowReason.trim()"
+            @click="confirmNoShow"
+          >
+            Confirmar
+          </button>
         </div>
       </div>
     </div>
