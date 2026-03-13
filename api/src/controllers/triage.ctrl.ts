@@ -430,12 +430,24 @@ export async function getDoctorTriageDetail(req: Request, res: Response) {
 
 export async function nurseOwnReport(req: Request, res: Response) {
     const nurse = (req as any).user;
-    const { start, end } = last24HoursRange();
+
+    // ✅ Solo pacientes del día actual (no 24h), usando timezone America/Merida
+    const now = new Date();
+    const todayStr = new Intl.DateTimeFormat("sv-SE", {
+        timeZone: "America/Merida",
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+    }).format(now); // "YYYY-MM-DD"
+
+    // Convertir inicio y fin del día en Mérida a UTC
+    const startOfDay = new Date(`${todayStr}T00:00:00-06:00`); // CST (UTC-6)
+    const endOfDay = new Date(`${todayStr}T23:59:59.999-06:00`);
 
     const rows = await prisma.triageRecord.findMany({
         where: {
             nurseId: nurse.id,
-            triageAt: { gte: start, lte: end },
+            triageAt: { gte: startOfDay, lte: endOfDay },
         },
         orderBy: [{ triageAt: "asc" }],
         include: {

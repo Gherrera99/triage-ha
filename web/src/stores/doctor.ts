@@ -220,6 +220,11 @@ export const useDoctorStore = defineStore("doctor", {
             await this.loadDetail(triageId);
         },
 
+        async markNoShow(triageId: number, reason: string) {
+            await api.post(`/medical/${triageId}/no-show`, { reason });
+            await this.fetchWaiting();
+        },
+
         async openPdf(triageId: number) {
             const { data } = await api.get(`/medical/${triageId}/pdf`, { responseType: "blob" });
             const url = URL.createObjectURL(new Blob([data], { type: "application/pdf" }));

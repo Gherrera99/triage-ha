@@ -37,6 +37,35 @@ function parseRange(startDate?: string, endDate?: string) {
     return { start, end };
 }
 
+// ✅ Excel: trae TODOS los registros del rango (no solo atendidos)
+function buildWhereAll(query: any) {
+    const { startDate, endDate, q, classification } = query as {
+        startDate?: string;
+        endDate?: string;
+        q?: string;
+        classification?: "VERDE" | "AMARILLO" | "ROJO";
+    };
+
+    const { start, end } = parseRange(startDate, endDate);
+
+    const term = (q ?? "").trim();
+    const where: any = {
+        triageAt: { gte: start, lte: end },
+    };
+
+    if (classification) where.classification = classification;
+
+    if (term) {
+        where.OR = [
+            { patient: { is: { fullName: { contains: term, mode: "insensitive" } } } },
+            { patient: { is: { expediente: { contains: term, mode: "insensitive" } } } },
+            ...(Number.isFinite(Number(term)) ? [{ id: Number(term) }] : []),
+        ];
+    }
+
+    return where;
+}
+
 function buildWhere(query: any) {
     const { startDate, endDate, q, classification } = query as {
         startDate?: string;
@@ -273,9 +302,9 @@ export const adminReportsCtrl = {
         res.json(updated);
     },
 
-    // ✅ Excel (respeta filtros)
+    // ✅ Excel (respeta filtros) — incluye TODOS los registros, no solo atendidos
     exportExcel: async (req: Request, res: Response) => {
-        const where = buildWhere(req.query);
+        const where = buildWhereAll(req.query);
         const rows = await prisma.triageRecord.findMany({
             where,
             orderBy: [{ triageAt: "asc" }],
@@ -284,6 +313,7 @@ export const adminReportsCtrl = {
                 nurse: { select: { name: true } },
                 payment: { include: { cashier: { select: { name: true } } } },
                 medicalNote: { include: { doctor: { select: { name: true, cedula: true } } } },
+                noShowDoctor: { select: { name: true } },
             },
             take: 5000,
         });
@@ -348,6 +378,19 @@ export const adminReportsCtrl = {
 
             { header: "Espera (min)", key: "wait", width: 12 },
             { header: "Cumple SLA", key: "slaOk", width: 10 },
+
+            { header: "Motivo Urgencia", key: "motivo", width: 18 },
+            { header: "Observaciones", key: "observaciones", width: 30 },
+            { header: "Fecha nacimiento", key: "birthDate", width: 14 },
+
+            { header: "No quiso pagar", key: "refusedPayment", width: 14 },
+            { header: "No se presento", key: "noShow", width: 14 },
+            { header: "Razon no-show", key: "noShowReason", width: 30 },
+            { header: "Fecha no-show", key: "noShowAt", width: 20 },
+            { header: "Doctor no-show", key: "noShowDoc", width: 22 },
+
+            { header: "Fecha cierre", key: "closedAt", width: 20 },
+            { header: "Razon cierre", key: "closedReason", width: 18 },
         ];
 
         ws.getRow(1).font = { bold: true };
@@ -404,7 +447,7 @@ export const adminReportsCtrl = {
                 dx: n.diagnostico ?? "",
                 plan: n.planTratamiento ?? "",
 
-                vig: vigilanciaToText(n.vigilancia),
+                vig: n.vigilanciaTexto || vigilanciaToText(n.vigilancia),
 
                 cr: n.contraRefFollowUp ? "SI" : "NO",
                 crWhen: n.contraRefFollowUp ? (n.contraRefWhen ?? "") : "",
@@ -418,6 +461,19 @@ export const adminReportsCtrl = {
 
                 wait: wait ?? "",
                 slaOk: ok,
+
+                motivo: r.motivoUrgencia ?? "",
+                observaciones: r.observaciones ?? "",
+                birthDate: p.birthDate ? fmtMeridaExcel(new Date(p.birthDate)) : "",
+
+                refusedPayment: r.refusedPayment ? "SI" : "NO",
+                noShow: r.noShow ? "SI" : "NO",
+                noShowReason: r.noShowReason ?? "",
+                noShowAt: fmtMeridaExcel(r.noShowAt ?? null),
+                noShowDoc: (r as any).noShowDoctor?.name ?? "",
+
+                closedAt: fmtMeridaExcel(r.closedAt ?? null),
+                closedReason: r.closedReason ?? "",
             });
         }
 
