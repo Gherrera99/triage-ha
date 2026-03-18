@@ -16,32 +16,53 @@ const detail = ref<any | null>(null);
 const detailError = ref<string | null>(null);
 
 function clsBorder(c: string) {
-  return c === "ROJO"
-      ? "border-red-500"
-      : c === "AMARILLO"
-          ? "border-yellow-400"
-          : "border-green-500";
-}
-function clsBg(c: string) {
-  return c === "ROJO"
-      ? "bg-red-50"
-      : c === "AMARILLO"
-          ? "bg-yellow-50"
-          : "bg-green-50";
+  if (c === "ROJO") return "border-red-500";
+  if (c === "AMARILLO") return "border-yellow-400";
+  return "border-green-500";
 }
 function clsDot(c: string) {
-  return c === "ROJO"
-      ? "bg-red-600"
-      : c === "AMARILLO"
-          ? "bg-yellow-500"
-          : "bg-green-600";
+  if (c === "ROJO") return "bg-red-600";
+  if (c === "AMARILLO") return "bg-yellow-500";
+  return "bg-green-600";
 }
 function clsText(c: string) {
-  return c === "ROJO"
-      ? "text-red-700"
-      : c === "AMARILLO"
-          ? "text-yellow-700"
-          : "text-green-700";
+  if (c === "ROJO") return "text-red-700";
+  if (c === "AMARILLO") return "text-yellow-700";
+  return "text-green-700";
+}
+function clsBadge(c: string) {
+  if (c === "ROJO") return "bg-red-500";
+  if (c === "AMARILLO") return "bg-amber-400";
+  return "bg-emerald-500";
+}
+
+// Computed classes
+const cardClass = computed(() =>
+  "w-full max-w-2xl rounded-2xl shadow-2xl border-l-8 bg-white p-6 " + clsBorder(current.value?.classification ?? "")
+);
+const dotClass = computed(() =>
+  "w-3 h-3 rounded-full animate-pulse shrink-0 " + clsDot(current.value?.classification ?? "")
+);
+const classifTextClass = computed(() =>
+  "text-sm font-semibold " + clsText(current.value?.classification ?? "")
+);
+const badgeClass = computed(() =>
+  "text-xs px-2 py-0.5 rounded-full font-semibold text-white " + clsBadge(current.value?.classification ?? "")
+);
+const paidClass = computed(() =>
+  "font-semibold " + (detail.value?.paidStatus === "PAID" ? "text-emerald-600" : "text-orange-600")
+);
+const appearanceClass = computed(() => "font-bold " + clsText(detail.value?.appearance ?? ""));
+const respirationClass = computed(() => "font-bold " + clsText(detail.value?.respiration ?? ""));
+const circulationClass = computed(() => "font-bold " + clsText(detail.value?.circulation ?? ""));
+const detailClassifClass = computed(() => "font-bold " + clsText(detail.value?.classification ?? ""));
+
+function queueItemClass(idx: number) {
+  const base = "w-full text-left p-3 rounded-xl border bg-white hover:bg-gray-50 transition-colors ";
+  return idx === 0 ? base + "ring-2 ring-blue-400 border-blue-200" : base + "border-gray-200";
+}
+function queueItemTextClass(c: string) {
+  return "text-xs font-bold " + clsText(c);
 }
 
 function fmt(iso: string) {
@@ -83,22 +104,21 @@ async function loadDetail(triageId: number) {
 }
 
 watch(
-    () => showDetail.value,
-    async (v) => {
-      if (!v) return;
-      if (!current.value?.id) return;
-      await loadDetail(current.value.id);
-    }
+  () => showDetail.value,
+  async (v) => {
+    if (!v) return;
+    if (!current.value?.id) return;
+    await loadDetail(current.value.id);
+  }
 );
 
 watch(
-    () => current.value?.id,
-    async (id) => {
-      // si cambia el paciente actual mientras el modal está abierto, recarga detalle
-      if (!showDetail.value) return;
-      if (!id) return;
-      await loadDetail(id);
-    }
+  () => current.value?.id,
+  async (id) => {
+    if (!showDetail.value) return;
+    if (!id) return;
+    await loadDetail(id);
+  }
 );
 
 function onKey(e: KeyboardEvent) {
@@ -109,10 +129,6 @@ function onKey(e: KeyboardEvent) {
 
 onMounted(() => {
   d.initRealtime();
-
-  // desbloqueo de audio con primer click del usuario
-  window.addEventListener("click", () => d.unlockAudio(), { once: true });
-
   window.addEventListener("keydown", onKey);
 });
 
@@ -122,32 +138,26 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <!-- OVERLAY ALERTA -->
-  <div
-      v-if="current"
-      class="fixed inset-0 bg-black/40 flex items-center justify-center p-6 z-50"
-  >
-    <div
-        class="w-full max-w-2xl rounded-2xl border-2 shadow-xl p-6"
-        :class="[clsBg(current.classification), clsBorder(current.classification)]"
-    >
+  <div v-if="current" class="overlay-backdrop p-6 z-50">
+    <div :class="cardClass">
+
       <!-- HEADER -->
-      <div class="flex items-start justify-between gap-4">
+      <div class="flex items-start justify-between gap-4 mb-4">
         <div class="flex items-center gap-3">
-          <span class="w-3 h-3 rounded-full animate-pulse" :class="clsDot(current.classification)"></span>
+          <span :class="dotClass"></span>
           <div>
-            <div class="text-lg font-semibold">Nuevo paciente en espera</div>
-            <div class="text-sm" :class="clsText(current.classification)">
-              Clasificación: <span class="font-semibold">{{ current.classification }}</span>
+            <div class="text-lg font-bold text-gray-800">Nuevo paciente en espera</div>
+            <div :class="classifTextClass">
+              Clasificacion {{ current.classification }}
             </div>
           </div>
         </div>
 
-        <div class="text-xs text-gray-700 text-right">
-          <div class="font-semibold">Alertas: {{ queue.length }}</div>
+        <div class="text-right">
+          <div class="text-xs font-semibold text-gray-600 mb-1">{{ queue.length }} alerta(s)</div>
           <button
-              class="mt-1 px-3 py-1 rounded-lg border text-xs bg-white/70 hover:bg-white"
-              @click="showQueue = !showQueue"
+            class="px-3 py-1 rounded-lg border border-gray-200 text-xs bg-white hover:bg-gray-50 transition-colors"
+            @click="showQueue = !showQueue"
           >
             {{ showQueue ? "Ocultar cola" : "Ver cola" }}
           </button>
@@ -155,181 +165,160 @@ onBeforeUnmount(() => {
       </div>
 
       <!-- BODY -->
-      <div class="mt-4 bg-white/70 rounded-xl p-4 text-sm">
+      <div class="bg-gray-50 rounded-xl p-4 mb-4 text-sm">
         <div class="flex items-start justify-between gap-3">
           <div>
-            <div class="font-semibold">{{ current.patient?.fullName }}</div>
-            <div class="text-gray-700">Motivo: {{ current.motivoUrgencia }}</div>
-            <div class="text-gray-700">Enfermero: {{ current.nurse?.name }}</div>
+            <div class="font-bold text-gray-800 text-base">{{ current.patient?.fullName }}</div>
+            <div class="text-gray-600 mt-1">Motivo: {{ current.motivoUrgencia }}</div>
+            <div class="text-gray-500">Enfermero: {{ current.nurse?.name || "-" }}</div>
           </div>
-          <div class="text-right text-gray-700">
-            <div class="text-xs">ID: {{ current.id }}</div>
-            <div class="text-xs" v-if="current.triageAt">Triage: {{ fmt(current.triageAt) }}</div>
+          <div class="text-right text-gray-500 text-xs">
+            <div>ID #{{ current.id }}</div>
+            <div v-if="current.triageAt">{{ fmt(current.triageAt) }}</div>
           </div>
         </div>
       </div>
 
       <!-- COLA -->
-      <div v-if="showQueue" class="mt-4 bg-white/70 rounded-xl p-4">
-        <div class="text-sm font-semibold mb-2">Cola de alertas (pendientes)</div>
-
+      <div v-if="showQueue" class="mb-4 border border-gray-200 rounded-xl p-4">
+        <div class="text-xs font-semibold uppercase tracking-wider text-gray-400 mb-3">Cola de alertas</div>
         <div class="max-h-40 overflow-auto space-y-2">
           <button
-              v-for="(a, idx) in queue"
-              :key="a.id"
-              class="w-full text-left p-3 rounded-xl border bg-white hover:bg-gray-50"
-              :class="idx === 0 ? 'ring-2 ring-blue-300' : ''"
-              @click="focus(a.id)"
+            v-for="(a, idx) in queue"
+            :key="a.id"
+            :class="queueItemClass(idx)"
+            @click="focus(a.id)"
           >
             <div class="flex items-center justify-between">
-              <div class="font-medium">
+              <span class="font-semibold text-sm text-gray-800">
                 {{ a.patient?.fullName }}
-                <span class="text-xs text-gray-500">· ID {{ a.id }}</span>
-              </div>
-              <div class="text-xs font-semibold" :class="clsText(a.classification)">
-                {{ a.classification }}
-              </div>
+                <span class="text-xs text-gray-400 font-normal ml-1">ID #{{ a.id }}</span>
+              </span>
+              <span :class="queueItemTextClass(a.classification)">{{ a.classification }}</span>
             </div>
-            <div class="text-xs text-gray-600">
-              {{ a.motivoUrgencia }} · {{ a.nurse?.name || "-" }}
-            </div>
+            <div class="text-xs text-gray-500 mt-0.5">{{ a.motivoUrgencia }} - {{ a.nurse?.name || "-" }}</div>
           </button>
-        </div>
-
-        <div class="mt-2 text-xs text-gray-600">
-          Tip: puedes seleccionar un elemento de la cola para hacerlo “actual”.
         </div>
       </div>
 
       <!-- BOTONES -->
-      <div class="mt-5 flex justify-end gap-2">
-        <button
-            class="px-4 py-2 rounded-xl border bg-white/80 hover:bg-white"
-            @click="openDetail"
-        >
-          Ver detalle
-        </button>
-
-        <button
-            class="px-4 py-2 rounded-xl bg-blue-600 text-white"
-            @click="ack"
-        >
-          Enterado
-        </button>
-      </div>
-
-      <div class="mt-2 text-xs text-gray-700">
-        Enterado detiene el sonido. También puedes presionar <span class="font-semibold">Enter</span>.
+      <div class="flex items-center justify-between">
+        <span class="text-xs text-gray-400">Presiona Enter para descartar</span>
+        <div class="flex gap-2">
+          <button class="btn-secondary" @click="openDetail">Ver detalle</button>
+          <button class="btn-primary" @click="ack">Enterado</button>
+        </div>
       </div>
     </div>
 
     <!-- MODAL DETALLE -->
-    <div
-        v-if="showDetail"
-        class="fixed inset-0 bg-black/50 flex items-center justify-center p-6 z-[60]"
-        @click.self="showDetail=false"
-    >
-      <div class="w-full max-w-3xl bg-white rounded-2xl shadow-xl border p-6">
-        <div class="flex items-start justify-between gap-3 mb-4">
+    <div v-if="showDetail" class="overlay-backdrop p-6 z-60" @click.self="showDetail = false">
+      <div class="w-full max-w-3xl bg-white rounded-2xl shadow-2xl overflow-hidden">
+        <div class="bg-gray-50 border-b px-6 py-4 flex items-start justify-between gap-3">
           <div>
-            <div class="text-lg font-semibold">Detalle del paciente</div>
-            <div v-if="current" class="text-sm text-gray-500">
-              ID {{ current.id }} · Clasificación:
-              <span class="font-semibold" :class="clsText(current.classification)">
-                {{ current.classification }}
-              </span>
+            <h2 class="font-bold text-gray-800">Detalle del paciente</h2>
+            <div v-if="current" class="flex items-center gap-2 mt-0.5">
+              <span class="text-sm text-gray-500">ID #{{ current.id }}</span>
+              <span :class="badgeClass">{{ current.classification }}</span>
             </div>
           </div>
-          <button class="px-3 py-2 rounded-xl border text-sm hover:bg-gray-50" @click="showDetail=false">
-            Cerrar
-          </button>
+          <button class="btn-secondary text-xs py-1.5" @click="showDetail = false">Cerrar</button>
         </div>
 
-        <div v-if="detailLoading" class="text-gray-600">Cargando...</div>
-        <div v-else-if="detailError" class="text-red-600">{{ detailError }}</div>
-
-        <div v-else-if="detail" class="space-y-4">
-          <!-- Datos generales -->
-          <div class="grid grid-cols-2 gap-3 bg-gray-50 rounded-xl p-4 text-sm">
-            <div>
-              <div class="text-gray-500 text-xs">Paciente</div>
-              <div class="font-semibold">{{ detail.patient?.fullName }}</div>
-              <div class="text-gray-700">
-                Exp: {{ detail.patient?.expediente || "-" }} · Edad: {{ detail.patient?.age ?? "-" }} · Sexo: {{ detail.patient?.sex ?? "-" }}
-              </div>
-              <div class="text-gray-700">
-                Responsable: {{ detail.patient?.responsibleName || "-" }}
-                <span v-if="detail.patient?.mayaHabla"> · Habla Maya</span>
-              </div>
-            </div>
-
-            <div>
-              <div class="text-gray-500 text-xs">Registro</div>
-              <div class="text-gray-700">Motivo: {{ detail.motivoUrgencia }}</div>
-              <div class="text-gray-700">Triage: {{ detail.triageAt ? fmt(detail.triageAt) : "-" }}</div>
-              <div class="text-gray-700">Enfermero: {{ detail.nurse?.name || "-" }}</div>
-              <div class="text-gray-700">
-                Pago: <span class="font-semibold">{{ detail.paidStatus === "PAID" ? "PAGADO" : "PENDIENTE" }}</span>
-              </div>
-            </div>
+        <div class="p-6">
+          <div v-if="detailLoading" class="py-10 text-center text-gray-400">
+            <svg class="animate-spin w-7 h-7 mx-auto mb-2 text-blue-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+              <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
+              <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
+            </svg>
+            Cargando...
           </div>
 
-          <!-- Semáforo -->
-          <div class="grid grid-cols-4 gap-3 text-sm">
-            <div class="border rounded-xl p-3">
-              <div class="text-xs text-gray-500">Apariencia</div>
-              <div class="font-semibold">{{ detail.appearance }}</div>
-            </div>
-            <div class="border rounded-xl p-3">
-              <div class="text-xs text-gray-500">Respiración</div>
-              <div class="font-semibold">{{ detail.respiration }}</div>
-            </div>
-            <div class="border rounded-xl p-3">
-              <div class="text-xs text-gray-500">Circulación</div>
-              <div class="font-semibold">{{ detail.circulation }}</div>
-            </div>
-            <div class="border rounded-xl p-3">
-              <div class="text-xs text-gray-500">Clasificación</div>
-              <div class="font-semibold" :class="clsText(detail.classification)">{{ detail.classification }}</div>
-            </div>
+          <div v-else-if="detailError" class="bg-red-50 border border-red-200 rounded-xl px-4 py-3 text-sm text-red-600">
+            {{ detailError }}
           </div>
 
-          <!-- Signos vitales -->
-          <div class="border rounded-xl p-4 text-sm">
-            <div class="font-semibold mb-2">Signos vitales</div>
-            <div class="grid grid-cols-3 gap-2">
-              <div>Peso: <span class="font-semibold">{{ detail.weightKg ?? "-" }}</span></div>
-              <div>Talla: <span class="font-semibold">{{ detail.heightCm ?? "-" }}</span></div>
-              <div>Temp: <span class="font-semibold">{{ detail.temperatureC ?? "-" }}</span></div>
-              <div>FC: <span class="font-semibold">{{ detail.heartRate ?? "-" }}</span></div>
-              <div>FR: <span class="font-semibold">{{ detail.respiratoryRate ?? "-" }}</span></div>
-              <div>TA: <span class="font-semibold">{{ detail.bloodPressure ?? "-" }}</span></div>
-            </div>
-          </div>
-
-          <!-- Datos adicionales -->
-          <div class="border rounded-xl p-4 text-sm">
-            <div class="font-semibold mb-2">Datos adicionales</div>
-            <div class="grid grid-cols-2 gap-2">
-              <div>
-                Atención previa misma patología:
-                <span class="font-semibold">{{ detail.hadPriorCareSamePathology ? "SÍ" : "NO" }}</span>
-                <div class="text-gray-700" v-if="detail.hadPriorCareSamePathology">
-                  Lugar: {{ detail.priorCarePlace || "-" }}
+          <div v-else-if="detail" class="space-y-4">
+            <div class="grid grid-cols-2 gap-4">
+              <div class="bg-gray-50 rounded-xl p-4 text-sm">
+                <p class="section-label">Paciente</p>
+                <div class="font-bold text-gray-800">{{ detail.patient?.fullName }}</div>
+                <div class="text-gray-600 mt-1">
+                  Exp: {{ detail.patient?.expediente || "-" }} -
+                  Edad: {{ detail.patient?.age ?? "-" }} -
+                  Sexo: {{ detail.patient?.sex ?? "-" }}
                 </div>
+                <div class="text-gray-600">Responsable: {{ detail.patient?.responsibleName || "-" }}</div>
+                <div v-if="detail.patient?.mayaHabla" class="text-purple-600 font-medium mt-1">Habla Maya</div>
               </div>
-              <div>
-                Referencia:
-                <span class="font-semibold">{{ detail.hasReferral ? "SÍ" : "NO" }}</span>
-                <div class="text-gray-700" v-if="detail.hasReferral">
-                  Lugar: {{ detail.referralPlace || "-" }}
+              <div class="bg-gray-50 rounded-xl p-4 text-sm">
+                <p class="section-label">Registro</p>
+                <div class="space-y-1 text-gray-700">
+                  <div>Motivo: <span class="font-semibold">{{ detail.motivoUrgencia }}</span></div>
+                  <div>Triage: {{ detail.triageAt ? fmt(detail.triageAt) : "-" }}</div>
+                  <div>Enfermero: {{ detail.nurse?.name || "-" }}</div>
+                  <div>
+                    Pago:
+                    <span :class="paidClass">
+                      {{ detail.paidStatus === "PAID" ? "Pagado" : "Pendiente" }}
+                    </span>
+                  </div>
                 </div>
               </div>
             </div>
-          </div>
 
-          <div class="text-xs text-gray-500">
-            *Este modal es solo informativo. El sonido se detiene únicamente con “Enterado”.
+            <!-- Semaforo -->
+            <div class="grid grid-cols-4 gap-3 text-sm">
+              <div class="bg-gray-50 rounded-xl p-3 text-center">
+                <div class="text-xs text-gray-400 mb-1">Apariencia</div>
+                <div :class="appearanceClass">{{ detail.appearance }}</div>
+              </div>
+              <div class="bg-gray-50 rounded-xl p-3 text-center">
+                <div class="text-xs text-gray-400 mb-1">Respiracion</div>
+                <div :class="respirationClass">{{ detail.respiration }}</div>
+              </div>
+              <div class="bg-gray-50 rounded-xl p-3 text-center">
+                <div class="text-xs text-gray-400 mb-1">Circulacion</div>
+                <div :class="circulationClass">{{ detail.circulation }}</div>
+              </div>
+              <div class="bg-gray-50 rounded-xl p-3 text-center">
+                <div class="text-xs text-gray-400 mb-1">Clasificacion</div>
+                <div :class="detailClassifClass">{{ detail.classification }}</div>
+              </div>
+            </div>
+
+            <!-- Signos vitales -->
+            <div class="bg-gray-50 rounded-xl p-4">
+              <p class="section-label">Signos vitales</p>
+              <div class="grid grid-cols-6 gap-3 text-sm text-center">
+                <div>
+                  <div class="text-xs text-gray-400 mb-0.5">Peso</div>
+                  <div class="font-bold">{{ detail.weightKg ?? "-" }}</div>
+                </div>
+                <div>
+                  <div class="text-xs text-gray-400 mb-0.5">Talla</div>
+                  <div class="font-bold">{{ detail.heightCm ?? "-" }}</div>
+                </div>
+                <div>
+                  <div class="text-xs text-gray-400 mb-0.5">Temp</div>
+                  <div class="font-bold">{{ detail.temperatureC ?? "-" }}</div>
+                </div>
+                <div>
+                  <div class="text-xs text-gray-400 mb-0.5">F.C.</div>
+                  <div class="font-bold">{{ detail.heartRate ?? "-" }}</div>
+                </div>
+                <div>
+                  <div class="text-xs text-gray-400 mb-0.5">F.R.</div>
+                  <div class="font-bold">{{ detail.respiratoryRate ?? "-" }}</div>
+                </div>
+                <div>
+                  <div class="text-xs text-gray-400 mb-0.5">T.A.</div>
+                  <div class="font-bold">{{ detail.bloodPressure ?? "-" }}</div>
+                </div>
+              </div>
+            </div>
+
+            <p class="text-xs text-gray-400">*Este modal es informativo. El anuncio se detiene unicamente con Enterado.</p>
           </div>
         </div>
       </div>

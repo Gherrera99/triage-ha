@@ -55,8 +55,6 @@ export const useDoctorStore = defineStore("doctor", {
 
         // alertas
         alertQueue: [] as any[],
-        _audioUnlocked: false,
-        _audioCtx: null as AudioContext | null,
         _beepTimer: null as any,
         _notifiedIds: [] as number[],
     }),
@@ -261,49 +259,23 @@ export const useDoctorStore = defineStore("doctor", {
         },
 
         // ====== ALERTAS SONORAS ======
-        unlockAudio() {
+        announcePatient() {
             try {
-                if (!this._audioCtx) this._audioCtx = new AudioContext();
-                if (this._audioCtx.state === "suspended") this._audioCtx.resume();
-                this._audioUnlocked = true;
+                if (!window.speechSynthesis) return;
+                window.speechSynthesis.cancel();
+                const utter = new SpeechSynthesisUtterance("Nuevo Paciente en espera");
+                utter.lang = "es-MX";
+                utter.rate = 0.9;
+                utter.pitch = 1;
+                utter.volume = 1;
+                window.speechSynthesis.speak(utter);
             } catch {}
         },
 
-        beepOnce(freq: number, ms = 180) {
-            if (!this._audioUnlocked) return;
-            if (!this._audioCtx) this._audioCtx = new AudioContext();
-            const ctx = this._audioCtx;
-            if (ctx.state === "suspended") ctx.resume();
-
-            const osc = ctx.createOscillator();
-            const gain = ctx.createGain();
-            osc.type = "sine";
-            osc.frequency.value = freq;
-            gain.gain.value = 0.08;
-
-            osc.connect(gain);
-            gain.connect(ctx.destination);
-
-            osc.start();
-            setTimeout(() => {
-                try { osc.stop(); } catch {}
-                try { osc.disconnect(); gain.disconnect(); } catch {}
-            }, ms);
-        },
-
-        startAlertSound(classification: string) {
+        startAlertSound(_classification: string) {
             this.stopAlertSound();
-
-            if (classification === "ROJO") {
-                this._beepTimer = setInterval(() => {
-                    this.beepOnce(880, 160);
-                    setTimeout(() => this.beepOnce(880, 160), 220);
-                }, 900);
-            } else if (classification === "AMARILLO") {
-                this._beepTimer = setInterval(() => this.beepOnce(660, 180), 1200);
-            } else {
-                this._beepTimer = setInterval(() => this.beepOnce(440, 160), 1600);
-            }
+            this.announcePatient();
+            this._beepTimer = setInterval(() => this.announcePatient(), 6000);
         },
 
         stopAlertSound() {
@@ -311,6 +283,7 @@ export const useDoctorStore = defineStore("doctor", {
                 clearInterval(this._beepTimer);
                 this._beepTimer = null;
             }
+            try { window.speechSynthesis.cancel(); } catch {}
         },
 
         enqueueAlert(row: any) {

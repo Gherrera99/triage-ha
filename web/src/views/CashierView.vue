@@ -25,51 +25,24 @@ const showAlert = ref(false);
 const alertRow = ref<any | null>(null);
 
 let alertInterval: number | null = null;
-let audioCtx: AudioContext | null = null;
 
-function ensureAudio() {
-  if (!audioCtx) audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
-  if (audioCtx.state === "suspended") audioCtx.resume().catch(() => {});
-}
-
-function beep(freq = 880, ms = 140, gainValue = 0.07) {
+function announcePatient() {
   try {
-    ensureAudio();
-    if (!audioCtx) return;
-
-    const o = audioCtx.createOscillator();
-    const g = audioCtx.createGain();
-    o.type = "sine";
-    o.frequency.value = freq;
-    g.gain.value = gainValue;
-
-    o.connect(g);
-    g.connect(audioCtx.destination);
-
-    const t0 = audioCtx.currentTime;
-    o.start(t0);
-    o.stop(t0 + ms / 1000);
+    if (!window.speechSynthesis) return;
+    window.speechSynthesis.cancel();
+    const utter = new SpeechSynthesisUtterance("Nuevo Paciente en espera");
+    utter.lang = "es-MX";
+    utter.rate = 0.9;
+    utter.pitch = 1;
+    utter.volume = 1;
+    window.speechSynthesis.speak(utter);
   } catch {}
 }
 
-function startAlertSound(color: string) {
+function startAlertSound(_color: string) {
   stopAlertSound();
-
-  const pattern = () => {
-    if (color === "ROJO") {
-      beep(1200, 120, 0.09);
-      setTimeout(() => beep(1200, 120, 0.09), 180);
-      setTimeout(() => beep(900, 160, 0.09), 420);
-    } else if (color === "AMARILLO") {
-      beep(900, 140, 0.08);
-      setTimeout(() => beep(900, 140, 0.08), 220);
-    } else {
-      beep(700, 120, 0.06);
-    }
-  };
-
-  pattern();
-  alertInterval = window.setInterval(pattern, 1600);
+  announcePatient();
+  alertInterval = window.setInterval(announcePatient, 6000);
 }
 
 function stopAlertSound() {
@@ -77,6 +50,7 @@ function stopAlertSound() {
     clearInterval(alertInterval);
     alertInterval = null;
   }
+  try { window.speechSynthesis.cancel(); } catch {}
 }
 
 function openAlert(row: any) {
@@ -119,6 +93,25 @@ function alertBadge(c: string) {
       : c === "AMARILLO"
           ? "bg-yellow-400 text-black"
           : "bg-green-600";
+}
+
+function badgeFullClass(c: string) {
+  return "text-xs px-2.5 py-0.5 rounded-full font-semibold text-white " + badge(c as TriageColor);
+}
+
+function alertCardFullClass(c: string) {
+  return "w-full max-w-md bg-white rounded-2xl shadow-2xl p-6 border-l-8 " + alertBorder(c);
+}
+
+function alertDotClass(c: string) {
+  const base = "w-2.5 h-2.5 rounded-full animate-pulse ";
+  if (c === "ROJO") return base + "bg-red-500";
+  if (c === "AMARILLO") return base + "bg-amber-400";
+  return base + "bg-emerald-500";
+}
+
+function alertBadgeFullClass(c: string) {
+  return "text-xs px-2.5 py-0.5 rounded-full font-semibold text-white " + alertBadge(c);
 }
 
 function onKey(e: KeyboardEvent) {
@@ -241,139 +234,134 @@ async function confirmRefuse() {
 </script>
 
 <template>
-  <div class="p-6 max-w-7xl mx-auto">
-    <div class="bg-white rounded-2xl shadow p-6">
-      <div class="flex items-start justify-between gap-4 mb-6">
-        <div>
-          <h1 class="text-2xl font-semibold">Caja</h1>
-          <div class="text-sm text-gray-500 mt-1">Cola de pacientes pendientes de pago</div>
+  <div class="p-6">
+    <!-- Page header -->
+    <div class="mb-6 flex items-start justify-between gap-4">
+      <div>
+        <div class="flex items-center gap-2 mb-1">
+          <div class="w-2.5 h-2.5 rounded-full bg-emerald-500"></div>
+          <span class="text-xs font-semibold uppercase tracking-wider text-emerald-600">Caja</span>
         </div>
-
-        <button
-            class="px-3 py-2 rounded-xl border text-sm hover:bg-gray-50"
-            :disabled="s.loading"
-            @click="s.fetchQueue()"
-        >
-          Refrescar
-        </button>
+        <h1 class="text-2xl font-bold text-gray-800">Cola de Pagos</h1>
+        <p class="text-sm text-gray-500 mt-0.5">Pacientes pendientes de pago</p>
       </div>
 
-      <div class="flex items-center justify-between gap-4 mb-4">
-        <input
-            v-model="q"
-            class="border rounded-xl p-2 w-[520px]"
-            placeholder="Buscar por nombre, expediente, motivo o ID..."
-        />
-        <div class="text-sm text-gray-500">{{ filtered.length }} registros</div>
-      </div>
+      <button class="btn-secondary flex items-center gap-2" :disabled="s.loading" @click="s.fetchQueue()">
+        <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+        </svg>
+        Refrescar
+      </button>
+    </div>
 
-      <div class="overflow-auto border rounded-2xl">
-        <table class="w-full text-sm">
-          <thead class="bg-gray-50">
-          <tr class="text-left border-b">
-            <th class="py-2 px-3">ID</th>
-            <th class="py-2 px-3">Fecha/Hora</th>
-            <th class="py-2 px-3">Expediente</th>
-            <th class="py-2 px-3">Paciente</th>
-            <th class="py-2 px-3">Motivo</th>
-            <th class="py-2 px-3">Clasif.</th>
-            <th class="py-2 px-3">Acciones</th>
-          </tr>
-          </thead>
+    <!-- Toolbar -->
+    <div class="flex items-center justify-between gap-4 mb-4">
+      <input v-model="q" class="input-base max-w-lg" placeholder="Buscar por nombre, expediente, motivo o ID..." />
+      <span class="text-sm text-gray-500 shrink-0">{{ filtered.length }} pacientes</span>
+    </div>
 
-          <tbody>
-          <tr v-for="r in filtered" :key="r.id" class="border-b">
-            <td class="py-2 px-3">{{ r.id }}</td>
-            <td class="py-2 px-3">{{ fmtMerida(r.triageAt) }}</td>
-            <td class="py-2 px-3">{{ expedienteVisible(r.patient.expediente) }}</td>
+    <!-- Table -->
+    <div class="card overflow-hidden">
+      <table class="w-full text-sm">
+        <thead class="bg-gray-50 border-b border-gray-100">
+        <tr>
+          <th class="th">Fecha / Hora</th>
+          <th class="th">Expediente</th>
+          <th class="th">Paciente</th>
+          <th class="th">Motivo</th>
+          <th class="th">Clasif.</th>
+          <th class="th">Acciones</th>
+        </tr>
+        </thead>
 
-            <td class="py-2 px-3">
-              <div class="font-medium">{{ r.patient.fullName }}</div>
-              <div class="text-xs text-gray-500">
-                {{ r.patient.age ?? "-" }} años · {{ r.patient.sex ?? "-" }}
-                <span v-if="r.patient.mayaHabla">· Maya</span>
-                <span v-if="r.patient.responsibleName">· Resp: {{ r.patient.responsibleName }}</span>
-                <span v-if="r.nurse?.name">· Enfermero: {{ r.nurse.name }}</span>
-              </div>
-            </td>
+        <tbody class="divide-y divide-gray-50">
+        <tr v-for="r in filtered" :key="r.id" class="hover:bg-gray-100 transition-colors">
+          <td class="td text-gray-500 text-xs whitespace-nowrap">{{ fmtMerida(r.triageAt) }}</td>
+          <td class="td font-mono text-xs">{{ expedienteVisible(r.patient.expediente) }}</td>
 
-            <td class="py-2 px-3">{{ r.motivoUrgencia }}</td>
+          <td class="td">
+            <div class="font-semibold text-gray-800">{{ r.patient.fullName }}</div>
+            <div class="text-xs text-gray-400 mt-0.5">
+              {{ r.patient.age ?? "—" }} años · {{ r.patient.sex ?? "—" }}
+              <span v-if="r.patient.mayaHabla"> · Maya</span>
+              <span v-if="r.patient.responsibleName"> · {{ r.patient.responsibleName }}</span>
+              <span v-if="r.nurse?.name"> · {{ r.nurse.name }}</span>
+            </div>
+          </td>
 
-            <td class="py-2 px-3">
-                <span class="text-white text-xs px-2 py-1 rounded-full" :class="badge(r.classification)">
-                  {{ r.classification }}
-                </span>
-            </td>
+          <td class="td">{{ r.motivoUrgencia }}</td>
 
-            <td class="py-2 px-3">
-              <div class="flex gap-2">
-                <button
-                    class="px-3 py-1 rounded-xl border text-xs hover:bg-gray-50 disabled:opacity-50"
-                    :disabled="s.paying || s.refusing"
-                    @click="openPay(r)"
-                >
-                  Marcar pagado
-                </button>
+          <td class="td">
+            <span :class="badgeFullClass(r.classification)">{{ r.classification }}</span>
+          </td>
 
-                <button
-                    class="px-3 py-1 rounded-xl border text-xs hover:bg-red-50 text-red-700 border-red-200 disabled:opacity-50"
-                    :disabled="s.paying || s.refusing"
-                    @click="openRefuse(r)"
-                >
-                  No quiso pagar
-                </button>
-              </div>
-            </td>
-          </tr>
+          <td class="td">
+            <div class="flex gap-2">
+              <button
+                  class="px-3 py-1.5 rounded-lg bg-emerald-50 text-emerald-700 border border-emerald-200 text-xs font-medium hover:bg-emerald-100 transition-colors disabled:opacity-40"
+                  :disabled="s.paying || s.refusing"
+                  @click="openPay(r)"
+              >
+                Marcar pagado
+              </button>
+              <button
+                  class="px-3 py-1.5 rounded-lg bg-red-50 text-red-700 border border-red-200 text-xs font-medium hover:bg-red-100 transition-colors disabled:opacity-40"
+                  :disabled="s.paying || s.refusing"
+                  @click="openRefuse(r)"
+              >
+                No quiso pagar
+              </button>
+            </div>
+          </td>
+        </tr>
 
-          <tr v-if="!filtered.length">
-            <td colspan="7" class="py-6 text-center text-gray-500">
-              Sin pacientes pendientes de pago
-            </td>
-          </tr>
-          </tbody>
-        </table>
-      </div>
+        <tr v-if="!filtered.length">
+          <td colspan="6" class="py-12 text-center text-gray-400">
+            <div class="flex flex-col items-center gap-2">
+              <svg xmlns="http://www.w3.org/2000/svg" class="w-10 h-10 text-gray-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+              </svg>
+              <span class="text-sm">Sin pacientes pendientes de pago</span>
+            </div>
+          </td>
+        </tr>
+        </tbody>
+      </table>
     </div>
 
     <!-- Modal pago -->
     <div
         v-if="payModal"
-        class="fixed inset-0 bg-black/30 flex items-center justify-center p-4 z-40"
+        class="overlay-backdrop flex items-center justify-center p-4 z-40"
         @click.self="payModal=false"
     >
-      <div class="w-full max-w-md bg-white rounded-2xl shadow p-6">
-        <div class="text-lg font-semibold mb-1">Confirmar pago</div>
-        <div class="text-sm text-gray-500 mb-4">
-          Triage ID: {{ payRow?.id }} · {{ payRow?.patient.fullName }}
-        </div>
-
-        <div class="mb-4">
-          <label class="text-sm font-medium">Expediente</label>
-          <input
-              v-model="expedienteInput"
-              class="mt-1 w-full border rounded-xl p-2"
-              placeholder="SIN EXPEDIENTE o número de expediente"
-          />
-          <div class="text-xs text-gray-500 mt-1">
-            Es opcional. Si se deja vacío o "SIN EXPEDIENTE", se conservará sin expediente.
+      <div class="w-full max-w-md card p-6 shadow-xl">
+        <div class="flex items-center gap-3 mb-5">
+          <div class="w-10 h-10 rounded-xl bg-emerald-100 flex items-center justify-center">
+            <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5 text-emerald-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
+            </svg>
+          </div>
+          <div>
+            <div class="font-bold text-gray-800">Confirmar pago</div>
+            <div class="text-xs text-gray-500">{{ payRow?.patient.fullName }}</div>
           </div>
         </div>
 
-        <div class="text-sm text-gray-700 bg-gray-50 border rounded-xl p-3">
-          ¿Deseas marcar este paciente como pagado?
+        <div class="mb-4">
+          <label class="block text-sm font-medium text-gray-700 mb-1.5">Expediente</label>
+          <input v-model="expedienteInput" class="input-base" placeholder="SIN EXPEDIENTE o número de expediente" />
+          <p class="text-xs text-gray-400 mt-1.5">Opcional — se conservará el existente si se deja vacío.</p>
         </div>
 
-        <div class="flex justify-end gap-2 mt-5">
-          <button class="px-4 py-2 rounded-xl border text-sm hover:bg-gray-50" @click="payModal=false">
-            Cancelar
-          </button>
-          <button
-              class="px-4 py-2 rounded-xl bg-blue-600 text-white text-sm disabled:opacity-50"
-              :disabled="s.paying"
-              @click="confirmPay"
-          >
-            Confirmar
+        <div class="bg-emerald-50 border border-emerald-200 rounded-xl px-4 py-3 text-sm text-emerald-800 mb-5">
+          ¿Confirmar pago de este paciente?
+        </div>
+
+        <div class="flex justify-end gap-2">
+          <button class="btn-secondary" @click="payModal=false">Cancelar</button>
+          <button class="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-xl text-sm font-medium transition-colors disabled:opacity-50" :disabled="s.paying" @click="confirmPay">
+            Confirmar pago
           </button>
         </div>
       </div>
@@ -382,68 +370,59 @@ async function confirmRefuse() {
     <!-- Modal no quiso pagar -->
     <div
         v-if="refuseModal"
-        class="fixed inset-0 bg-black/30 flex items-center justify-center p-4 z-40"
+        class="overlay-backdrop flex items-center justify-center p-4 z-40"
         @click.self="refuseModal=false"
     >
-      <div class="w-full max-w-md bg-white rounded-2xl shadow p-6">
-        <div class="text-lg font-semibold mb-1 text-red-700">No quiso pagar</div>
-        <div class="text-sm text-gray-500 mb-4">
-          Triage ID: {{ refuseRow?.id }} · {{ refuseRow?.patient.fullName }}
+      <div class="w-full max-w-md card p-6 shadow-xl">
+        <div class="flex items-center gap-3 mb-5">
+          <div class="w-10 h-10 rounded-xl bg-red-100 flex items-center justify-center">
+            <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5 text-red-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z"/>
+            </svg>
+          </div>
+          <div>
+            <div class="font-bold text-red-700">No quiso pagar</div>
+            <div class="text-xs text-gray-500">{{ refuseRow?.patient.fullName }}</div>
+          </div>
         </div>
 
-        <div class="text-sm text-gray-700 bg-red-50 border border-red-200 rounded-xl p-3">
-          Esta acción cerrará el flujo del paciente y ya no pasará a consulta médica.
+        <div class="bg-red-50 border border-red-200 rounded-xl px-4 py-3 text-sm text-red-700 mb-5">
+          Esta acción cerrará el flujo del paciente. Ya no pasará a consulta médica.
         </div>
 
-        <div class="flex justify-end gap-2 mt-5">
-          <button class="px-4 py-2 rounded-xl border text-sm hover:bg-gray-50" @click="refuseModal=false">
-            Cancelar
-          </button>
-          <button
-              class="px-4 py-2 rounded-xl bg-red-600 text-white text-sm disabled:opacity-50"
-              :disabled="s.refusing"
-              @click="confirmRefuse"
-          >
-            Confirmar
-          </button>
+        <div class="flex justify-end gap-2">
+          <button class="btn-secondary" @click="refuseModal=false">Cancelar</button>
+          <button class="btn-danger" :disabled="s.refusing" @click="confirmRefuse">Confirmar</button>
         </div>
       </div>
     </div>
 
     <!-- ALERTA NUEVO PACIENTE -->
-    <div
-        v-if="showAlert"
-        class="fixed inset-0 bg-black/40 flex items-center justify-center p-4 z-50"
-    >
-      <div class="w-full max-w-md bg-white rounded-2xl shadow p-6 border-4" :class="alertBorder(alertRow?.classification)">
-        <div class="text-xs uppercase tracking-wide text-gray-500">Nuevo paciente en espera</div>
+    <div v-if="showAlert" class="overlay-backdrop flex items-center justify-center p-4 z-50">
+      <div :class="alertCardFullClass(alertRow?.classification ?? '')">
+        <div class="flex items-center gap-2 mb-3">
+          <span :class="alertDotClass(alertRow?.classification ?? '')"></span>
+          <span class="text-xs uppercase tracking-wider font-semibold text-gray-500">Nuevo paciente en espera</span>
+        </div>
 
-        <div class="mt-2 text-xl font-semibold">
+        <div class="text-xl font-bold text-gray-800 mb-3">
           {{ alertRow?.patient?.fullName || "Paciente" }}
         </div>
 
-        <div class="mt-2 flex items-center gap-2">
-          <span class="text-white text-xs px-2 py-1 rounded-full" :class="alertBadge(alertRow?.classification)">
+        <div class="flex items-center gap-2 mb-2">
+          <span :class="alertBadgeFullClass(alertRow?.classification ?? '')">
             {{ alertRow?.classification }}
           </span>
-          <span class="text-sm text-gray-600">
-            ID: {{ alertRow?.id }} · Motivo: {{ alertRow?.motivoUrgencia }}
-          </span>
+          <span class="text-sm text-gray-500">· {{ alertRow?.motivoUrgencia }}</span>
         </div>
 
-        <div class="mt-2 text-sm text-gray-600">
-          Expediente: <b>{{ alertRow?.patient?.expediente || "SIN EXPEDIENTE" }}</b>
+        <div class="text-sm text-gray-600 bg-gray-50 rounded-xl px-3 py-2 mb-5">
+          Expediente: <span class="font-semibold">{{ alertRow?.patient?.expediente || "SIN EXPEDIENTE" }}</span>
         </div>
 
-        <div class="mt-5 flex justify-between items-center">
-          <div class="text-xs text-gray-500">Presiona Enter para cerrar</div>
-
-          <button
-              class="px-4 py-2 rounded-xl bg-blue-600 text-white"
-              @click="ackAlert"
-          >
-            Enterado
-          </button>
+        <div class="flex justify-between items-center">
+          <span class="text-xs text-gray-400">Presiona Enter para descartar</span>
+          <button class="btn-primary" @click="ackAlert">Enterado</button>
         </div>
       </div>
     </div>

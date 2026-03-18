@@ -1,7 +1,7 @@
 <script setup lang="ts">
 //web/src/App.vue
 import { computed, onMounted, watch } from "vue";
-import { useRouter, RouterView, RouterLink } from "vue-router";
+import { useRouter, RouterView, RouterLink, useRoute } from "vue-router";
 import { useAuthStore } from "./stores/auth";
 import { useSocket } from "./composables/useSocket";
 import DoctorAlertOverlay from "./components/DoctorAlertOverlay.vue";
@@ -9,14 +9,24 @@ import DoctorAlertOverlay from "./components/DoctorAlertOverlay.vue";
 
 const auth = useAuthStore();
 const router = useRouter();
+const route = useRoute();
 const { connect, disconnect } = useSocket();
+
+const isLogin = computed(() => route.path === "/login");
+
+const ROLE_LABEL: Record<string, string> = {
+  NURSE_TRIAGE: "Enfermería",
+  CASHIER: "Caja",
+  DOCTOR: "Médico",
+  ADMIN: "Administrador",
+  CONSULTOR: "Consultor",
+};
 
 onMounted(() => {
   auth.init();
   if (auth.token) connect();
 });
 
-// opcional: si haces login y token cambia, conecta socket automáticamente
 watch(
     () => auth.token,
     (t) => {
@@ -39,11 +49,13 @@ const menu = computed(() => {
       { to: "/triage", label: "Triage" },
       { to: "/cashier", label: "Caja" },
       { to: "/doctor", label: "Urgencias" },
-      { to: "/admin", label: "Administrador" },
+      { to: "/admin", label: "Reportes" },
       { to: "/admin/users", label: "Usuarios" },
     ];
   }
-
+  if (role.value === "CONSULTOR") {
+    return [{ to: "/admin", label: "Reportes" }];
+  }
   return [];
 });
 
@@ -52,22 +64,39 @@ function logout() {
   auth.logout();
   router.push("/login");
 }
+
+function userInitial(name: string) {
+  return name ? name.charAt(0).toUpperCase() : "?";
+}
 </script>
 
 <template>
-  <div class="min-h-screen bg-gray-50">
-    <header class="bg-white border-b">
-      <div class="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
-        <div class="flex items-center gap-4">
-          <div class="font-semibold text-lg">Sistema Triage</div>
+  <!-- Login: sin navbar, sin contenedor -->
+  <div v-if="isLogin" class="h-screen w-screen overflow-hidden">
+    <RouterView />
+  </div>
 
-          <nav v-if="menu.length" class="flex items-center gap-2">
+  <!-- App normal con navbar -->
+  <div v-else class="min-h-screen bg-slate-50">
+    <header class="bg-gradient-to-r from-blue-700 to-blue-800 shadow-lg sticky top-0 z-30">
+      <div class="max-w-7xl mx-auto px-6 py-3 flex items-center justify-between">
+        <div class="flex items-center gap-6">
+          <div class="flex items-center gap-2.5">
+            <div class="nav-icon-wrap">
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="white" class="w-5 h-5">
+                <path d="M9 3h6v6h6v6h-6v6H9v-6H3v-6h6z"/>
+              </svg>
+            </div>
+            <span class="font-bold text-white text-lg tracking-wide">Sistema Triage</span>
+          </div>
+
+          <nav v-if="menu.length" class="flex items-center gap-1">
             <RouterLink
                 v-for="item in menu"
                 :key="item.to"
                 :to="item.to"
-                class="px-3 py-2 rounded-xl text-sm hover:bg-gray-100"
-                active-class="bg-blue-50 text-blue-700"
+                class="nav-link"
+                active-class="nav-link-active"
             >
               {{ item.label }}
             </RouterLink>
@@ -75,26 +104,23 @@ function logout() {
         </div>
 
         <div class="flex items-center gap-3" v-if="user">
-          <div class="text-right leading-tight">
-            <div class="text-sm font-medium">{{ user.name }}</div>
-            <div class="text-xs text-gray-500">
-              {{ user.role }}
-              <span v-if="user.cedula">· Cédula: {{ user.cedula }}</span>
+          <div class="text-right leading-tight hidden sm:block">
+            <div class="text-sm font-medium text-white">{{ user.name }}</div>
+            <div class="text-xs text-blue-200">
+              {{ ROLE_LABEL[user.role] || user.role }}
+              <span v-if="user.cedula"> · Cedula: {{ user.cedula }}</span>
             </div>
           </div>
-
-          <button class="px-3 py-2 rounded-xl border text-sm hover:bg-gray-50" @click="logout">
-            Salir
-          </button>
+          <div class="nav-avatar">{{ userInitial(user.name) }}</div>
+          <button class="nav-logout" @click="logout">Salir</button>
         </div>
       </div>
     </header>
 
-    <main class="max-w-7xl mx-auto">
+    <main class="max-w-7xl mx-auto px-0">
       <RouterView />
     </main>
 
     <DoctorAlertOverlay v-if="role === 'DOCTOR'" />
-
   </div>
 </template>

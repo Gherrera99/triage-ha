@@ -227,6 +227,8 @@ export async function markNoShow(req: Request, res: Response) {
         emitToRole("DOCTOR", "triage:updated", result);
         emitToRole("NURSE_TRIAGE", "triage:updated", result);
         emitToRole("CASHIER", "triage:updated", result);
+        emitToRole("ADMIN", "report:updated", { triageId: result.id });
+        emitToRole("CONSULTOR", "report:updated", { triageId: result.id });
 
         res.json(result);
     } catch (e: any) {
@@ -254,6 +256,8 @@ export async function finishConsultation(req: Request, res: Response) {
 
     emitToRole("NURSE_TRIAGE", "consultation:finished", { triageId, doctorId: doctor.id });
     emitToRole("DOCTOR", "consultation:finished", { triageId, doctorId: doctor.id });
+    emitToRole("ADMIN", "report:updated", { triageId });
+    emitToRole("CONSULTOR", "report:updated", { triageId });
 
     res.json(note);
 }

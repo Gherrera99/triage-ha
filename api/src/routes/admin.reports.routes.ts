@@ -11,6 +11,9 @@ r.put("/attended/:id", requireAuth, requireRole(["ADMIN"]), adminReportsCtrl.upd
 // cancelados (no-show + no quiso pagar)
 r.get("/cancelled", requireAuth, requireRole(["ADMIN", "CONSULTOR"]), adminReportsCtrl.listCancelled);
 
+// solo enfermería (motivo ≠ CONSULTA, cerrados en caja)
+r.get("/cashier-closed", requireAuth, requireRole(["ADMIN", "CONSULTOR"]), adminReportsCtrl.listCashierClosed);
+
 // export
 r.get("/attended-excel", requireAuth, requireRole(["ADMIN", "CONSULTOR"]), adminReportsCtrl.exportExcel);
 

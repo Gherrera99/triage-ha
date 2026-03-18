@@ -20,6 +20,16 @@ function fmtMeridaExcel(d?: Date | null) {
     }).format(d);
 }
 
+function fmtDateOnly(d?: Date | null) {
+    if (!d) return "";
+    return new Intl.DateTimeFormat("sv-SE", {
+        timeZone: "America/Merida",
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+    }).format(d);
+}
+
 
 function minutesDiff(a?: Date | null, b?: Date | null) {
     if (!a || !b) return null;
@@ -144,6 +154,38 @@ function vigilanciaToText(v: any) {
     return out.join(", ");
 }
 
+// ✅ Filtro para atendidos solo por enfermería (closedReason = CASHIER_FINISHED, motivo ≠ CONSULTA)
+function buildWhereCashierClosed(query: any) {
+    const { startDate, endDate, q, classification } = query as {
+        startDate?: string;
+        endDate?: string;
+        q?: string;
+        classification?: "VERDE" | "AMARILLO" | "ROJO";
+    };
+
+    const { start, end } = parseRange(startDate, endDate);
+
+    const term = (q ?? "").trim();
+    const where: any = {
+        triageAt: { gte: start, lte: end },
+        closedReason: "CASHIER_FINISHED",
+        noShow: false,
+        refusedPayment: false,
+    };
+
+    if (classification) where.classification = classification;
+
+    if (term) {
+        where.OR = [
+            { patient: { is: { fullName: { contains: term, mode: "insensitive" } } } },
+            { patient: { is: { expediente: { contains: term, mode: "insensitive" } } } },
+            ...(Number.isFinite(Number(term)) ? [{ id: Number(term) }] : []),
+        ];
+    }
+
+    return where;
+}
+
 // ✅ Filtro para cancelados (no-show + no quiso pagar)
 function buildWhereCancelled(query: any) {
     const { startDate, endDate, q, classification } = query as {
@@ -250,6 +292,7 @@ export const adminReportsCtrl = {
                         expediente: patient.expediente ?? undefined,
                         fullName: patient.fullName ?? undefined,
                         age: patient.age ?? undefined,
+                        birthDate: patient.birthDate ? new Date(patient.birthDate) : undefined,
                         sex: patient.sex ?? undefined,
                         mayaHabla: patient.mayaHabla ?? undefined,
                         responsibleName: patient.responsibleName ?? undefined,
@@ -278,6 +321,7 @@ export const adminReportsCtrl = {
                     priorCarePlace: triage.priorCarePlace ?? undefined,
                     hasReferral: triage.hasReferral ?? undefined,
                     referralPlace: triage.referralPlace ?? undefined,
+                    observaciones: triage.observaciones ?? undefined,
                 },
             });
 
@@ -293,6 +337,7 @@ export const adminReportsCtrl = {
                         diagnostico: medicalNote.diagnostico ?? undefined,
                         planTratamiento: medicalNote.planTratamiento ?? undefined,
                         vigilancia: medicalNote.vigilancia ?? undefined,
+                        vigilanciaTexto: medicalNote.vigilanciaTexto ?? undefined,
                         contraRefFollowUp: medicalNote.contraRefFollowUp ?? undefined,
                         contraRefWhen: medicalNote.contraRefWhen ?? undefined,
                         pronostico: medicalNote.pronostico ?? undefined,
@@ -342,9 +387,26 @@ export const adminReportsCtrl = {
         res.json(updated);
     },
 
-    // ✅ Excel (respeta filtros) — incluye TODOS los registros, no solo atendidos
+    // ✅ Excel — respeta la pestaña activa (type) y los filtros seleccionados
     exportExcel: async (req: Request, res: Response) => {
-        const where = buildWhereAll(req.query);
+        const type = (req.query.type as string) || "attended";
+
+        let where: any;
+        let filename: string;
+        const { startDate, endDate } = req.query as { startDate?: string; endDate?: string };
+        const suffix = startDate && endDate ? `${startDate}_a_${endDate}` : "export";
+
+        if (type === "cancelled") {
+            where = buildWhereCancelled(req.query);
+            filename = `reporte_no_atendidos_${suffix}.xlsx`;
+        } else if (type === "cashierClosed") {
+            where = buildWhereCashierClosed(req.query);
+            filename = `reporte_solo_enfermeria_${suffix}.xlsx`;
+        } else {
+            where = buildWhere(req.query);
+            filename = `reporte_atendidos_${suffix}.xlsx`;
+        }
+
         const rows = await prisma.triageRecord.findMany({
             where,
             orderBy: [{ triageAt: "asc" }],
@@ -361,9 +423,8 @@ export const adminReportsCtrl = {
         const wb = new ExcelJS.Workbook();
         const ws = wb.addWorksheet("Reporte");
 
-        ws.columns = [
-            { header: "ID", key: "id", width: 8 },
-
+        // Columnas base (comunes a los 3 tipos)
+        const baseColumns = [
             { header: "Expediente", key: "expediente", width: 14 },
             { header: "Paciente", key: "paciente", width: 28 },
             { header: "Edad", key: "edad", width: 6 },
@@ -385,7 +446,6 @@ export const adminReportsCtrl = {
 
             { header: "Atención previa", key: "prev", width: 12 },
             { header: "Lugar atención previa", key: "prevPlace", width: 20 },
-
             { header: "Con referencia", key: "ref", width: 12 },
             { header: "Lugar referencia", key: "refPlace", width: 20 },
 
@@ -397,41 +457,49 @@ export const adminReportsCtrl = {
             { header: "Estatus pago", key: "payStatus", width: 12 },
             { header: "Fecha pago", key: "paidAt", width: 20 },
 
+            { header: "Motivo Urgencia", key: "motivo", width: 18 },
+            { header: "Observaciones", key: "observaciones", width: 30 },
+            { header: "Fecha nacimiento", key: "birthDate", width: 14 },
+            { header: "Fecha cierre", key: "closedAt", width: 20 },
+        ];
+
+        // Columnas extra solo para atendidos y no-atendidos (incluyen nota médica)
+        const medicalColumns = [
             { header: "Padecimiento actual", key: "pa", width: 30 },
             { header: "Antecedentes", key: "ant", width: 30 },
             { header: "Exploración física", key: "ef", width: 30 },
             { header: "Estudios paraclínicos", key: "ep", width: 30 },
             { header: "Diagnóstico(s)", key: "dx", width: 30 },
             { header: "Plan/Tratamiento", key: "plan", width: 30 },
-
             { header: "Datos de alarma", key: "vig", width: 40 },
-
             { header: "Contrarreferencia", key: "cr", width: 14 },
             { header: "En cuánto tiempo", key: "crWhen", width: 16 },
-
             { header: "Pronóstico", key: "pro", width: 20 },
-
             { header: "Médico", key: "doc", width: 22 },
             { header: "Cédula", key: "ced", width: 14 },
             { header: "Inicio consulta", key: "start", width: 20 },
             { header: "Fin consulta", key: "finish", width: 20 },
-
             { header: "Espera (min)", key: "wait", width: 12 },
             { header: "Cumple SLA", key: "slaOk", width: 10 },
+        ];
 
-            { header: "Motivo Urgencia", key: "motivo", width: 18 },
-            { header: "Observaciones", key: "observaciones", width: 30 },
-            { header: "Fecha nacimiento", key: "birthDate", width: 14 },
-
+        // Columnas de no-atendidos
+        const cancelledColumns = [
             { header: "No quiso pagar", key: "refusedPayment", width: 14 },
-            { header: "No se presento", key: "noShow", width: 14 },
-            { header: "Razon no-show", key: "noShowReason", width: 30 },
+            { header: "No se presentó", key: "noShow", width: 14 },
+            { header: "Razón no-show", key: "noShowReason", width: 30 },
             { header: "Fecha no-show", key: "noShowAt", width: 20 },
             { header: "Doctor no-show", key: "noShowDoc", width: 22 },
-
-            { header: "Fecha cierre", key: "closedAt", width: 20 },
-            { header: "Razon cierre", key: "closedReason", width: 18 },
+            { header: "Razón cierre", key: "closedReason", width: 18 },
         ];
+
+        if (type === "cashierClosed") {
+            ws.columns = baseColumns;
+        } else if (type === "cancelled") {
+            ws.columns = [...baseColumns, ...medicalColumns, ...cancelledColumns];
+        } else {
+            ws.columns = [...baseColumns, ...medicalColumns];
+        }
 
         ws.getRow(1).font = { bold: true };
 
@@ -440,14 +508,7 @@ export const adminReportsCtrl = {
             const n = r.medicalNote ?? {};
             const pay = r.payment ?? null;
 
-            const startAt = n.consultationStartedAt ?? null;
-            const wait = minutesDiff(r.triageAt, startAt);
-            const thr = SLA[r.classification] ?? null;
-            const ok = wait !== null && thr !== null ? (wait <= thr ? "SI" : "NO") : "";
-
-            ws.addRow({
-                id: r.id,
-
+            const rowData: any = {
                 expediente: p.expediente ?? "",
                 paciente: p.fullName ?? "",
                 edad: p.age ?? "",
@@ -480,50 +541,54 @@ export const adminReportsCtrl = {
                 payStatus: r.paidStatus ?? "",
                 paidAt: fmtMeridaExcel(pay?.paidAt ?? null),
 
-                pa: n.padecimientoActual ?? "",
-                ant: n.antecedentes ?? "",
-                ef: n.exploracionFisica ?? "",
-                ep: n.estudiosParaclinicos ?? "",
-                dx: n.diagnostico ?? "",
-                plan: n.planTratamiento ?? "",
-
-                vig: n.vigilanciaTexto || vigilanciaToText(n.vigilancia),
-
-                cr: n.contraRefFollowUp ? "SI" : "NO",
-                crWhen: n.contraRefFollowUp ? (n.contraRefWhen ?? "") : "",
-
-                pro: n.pronostico ?? "",
-
-                doc: n.doctor?.name ?? "",
-                ced: n.doctor?.cedula ?? "",
-                start: fmtMeridaExcel(n.consultationStartedAt ?? null),
-                finish: fmtMeridaExcel(n.consultationFinishedAt ?? null),
-
-                wait: wait ?? "",
-                slaOk: ok,
-
                 motivo: r.motivoUrgencia ?? "",
                 observaciones: r.observaciones ?? "",
-                birthDate: p.birthDate ? fmtMeridaExcel(new Date(p.birthDate)) : "",
-
-                refusedPayment: r.refusedPayment ? "SI" : "NO",
-                noShow: r.noShow ? "SI" : "NO",
-                noShowReason: r.noShowReason ?? "",
-                noShowAt: fmtMeridaExcel(r.noShowAt ?? null),
-                noShowDoc: (r as any).noShowDoctor?.name ?? "",
-
+                birthDate: p.birthDate ? fmtDateOnly(new Date(p.birthDate)) : "",
                 closedAt: fmtMeridaExcel(r.closedAt ?? null),
-                closedReason: r.closedReason ?? "",
-            });
+            };
+
+            if (type !== "cashierClosed") {
+                const startAt = n.consultationStartedAt ?? null;
+                const wait = minutesDiff(r.triageAt, startAt);
+                const thr = SLA[r.classification] ?? null;
+                const ok = wait !== null && thr !== null ? (wait <= thr ? "SI" : "NO") : "";
+
+                Object.assign(rowData, {
+                    pa: n.padecimientoActual ?? "",
+                    ant: n.antecedentes ?? "",
+                    ef: n.exploracionFisica ?? "",
+                    ep: n.estudiosParaclinicos ?? "",
+                    dx: n.diagnostico ?? "",
+                    plan: n.planTratamiento ?? "",
+                    vig: n.vigilanciaTexto || vigilanciaToText(n.vigilancia),
+                    cr: n.contraRefFollowUp ? "SI" : "NO",
+                    crWhen: n.contraRefFollowUp ? (n.contraRefWhen ?? "") : "",
+                    pro: n.pronostico ?? "",
+                    doc: n.doctor?.name ?? "",
+                    ced: n.doctor?.cedula ?? "",
+                    start: fmtMeridaExcel(n.consultationStartedAt ?? null),
+                    finish: fmtMeridaExcel(n.consultationFinishedAt ?? null),
+                    wait: wait ?? "",
+                    slaOk: ok,
+                });
+            }
+
+            if (type === "cancelled") {
+                Object.assign(rowData, {
+                    refusedPayment: r.refusedPayment ? "SI" : "NO",
+                    noShow: r.noShow ? "SI" : "NO",
+                    noShowReason: r.noShowReason ?? "",
+                    noShowAt: fmtMeridaExcel(r.noShowAt ?? null),
+                    noShowDoc: (r as any).noShowDoctor?.name ?? "",
+                    closedReason: r.closedReason ?? "",
+                });
+            }
+
+            ws.addRow(rowData);
         }
 
-        // // formatos fecha/hora
-        // for (const key of ["triageAt", "paidAt", "start", "finish"] as const) {
-        //     ws.getColumn(key).numFmt = "yyyy-mm-dd hh:mm";
-        // }
-
         res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
-        res.setHeader("Content-Disposition", `attachment; filename="reporte_admin.xlsx"`);
+        res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
         await wb.xlsx.write(res);
         res.end();
     },
@@ -540,6 +605,24 @@ export const adminReportsCtrl = {
                 nurse: { select: { id: true, name: true } },
                 payment: { include: { cashier: { select: { id: true, name: true } } } },
                 noShowDoctor: { select: { id: true, name: true } },
+            },
+            take: 2000,
+        });
+
+        res.json({ rows });
+    },
+
+    // ✅ Lista atendidos solo por enfermería (motivo ≠ CONSULTA, cerrados en caja)
+    listCashierClosed: async (req: Request, res: Response) => {
+        const where = buildWhereCashierClosed(req.query);
+
+        const rows = await prisma.triageRecord.findMany({
+            where,
+            orderBy: [{ triageAt: "desc" }],
+            include: {
+                patient: true,
+                nurse: { select: { id: true, name: true } },
+                payment: { include: { cashier: { select: { id: true, name: true } } } },
             },
             take: 2000,
         });

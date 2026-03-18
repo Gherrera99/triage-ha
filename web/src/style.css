@@ -1,7 +1,183 @@
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
 html, body {
     height: 100%;
+}
+
+@layer components {
+  .input-base {
+    @apply w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm bg-white
+           focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent
+           placeholder-gray-400 transition;
+  }
+  .btn-primary {
+    @apply bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-xl text-sm font-medium
+           transition-colors disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+  .btn-secondary {
+    @apply border border-gray-200 hover:bg-gray-50 text-gray-700 px-4 py-2 rounded-xl
+           text-sm font-medium transition-colors disabled:opacity-50;
+  }
+  .btn-danger {
+    @apply bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-xl text-sm font-medium
+           transition-colors disabled:opacity-50;
+  }
+  .card {
+    @apply bg-white rounded-2xl shadow-sm border border-gray-100;
+  }
+  .section-label {
+    @apply text-xs uppercase tracking-wider font-semibold text-gray-400 mb-3;
+  }
+  .tab-btn {
+    @apply px-4 py-2 rounded-xl border text-sm font-medium transition-colors;
+  }
+  .tab-btn-active {
+    @apply bg-blue-600 border-blue-600 text-white;
+  }
+  .tab-btn-inactive {
+    @apply border-gray-200 text-gray-600 hover:bg-gray-50;
+  }
+  .badge-rojo {
+    @apply bg-red-500 text-white text-xs px-2.5 py-0.5 rounded-full font-semibold;
+  }
+  .badge-amarillo {
+    @apply bg-amber-400 text-white text-xs px-2.5 py-0.5 rounded-full font-semibold;
+  }
+  .badge-verde {
+    @apply bg-emerald-500 text-white text-xs px-2.5 py-0.5 rounded-full font-semibold;
+  }
+  .th {
+    @apply py-3 px-4 text-xs uppercase tracking-wider font-semibold text-gray-500 text-left;
+  }
+  .td {
+    @apply py-3 px-4 text-sm text-gray-700;
+  }
+  .overlay-backdrop {
+    @apply fixed inset-0 flex items-center justify-center;
+    background-color: rgba(0, 0, 0, 0.45);
+  }
+  .nav-icon-wrap {
+    background-color: rgba(255, 255, 255, 0.2);
+    @apply w-8 h-8 rounded-lg flex items-center justify-center;
+  }
+  .nav-link {
+    @apply px-3 py-1.5 rounded-lg text-sm text-blue-100 transition-colors;
+  }
+  .nav-link:hover {
+    background-color: rgba(255, 255, 255, 0.2);
+    @apply text-white;
+  }
+  .nav-link-active {
+    background-color: rgba(255, 255, 255, 0.25);
+    @apply text-white font-semibold;
+  }
+  .nav-avatar {
+    background-color: rgba(255, 255, 255, 0.25);
+    border: 2px solid rgba(255, 255, 255, 0.3);
+    @apply w-9 h-9 rounded-full flex items-center justify-center text-white text-sm font-bold;
+  }
+  .nav-logout {
+    border: 1px solid rgba(255, 255, 255, 0.3);
+    @apply px-3 py-1.5 rounded-lg text-sm text-white transition-colors;
+  }
+  .nav-logout:hover {
+    background-color: rgba(255, 255, 255, 0.2);
+  }
+  .footer-text {
+    color: rgba(191, 219, 254, 0.7);
+    @apply text-center text-xs mt-6;
+  }
+
+  /* ── Login ─────────────────────────────── */
+  .login-page {
+    @apply relative w-screen h-screen overflow-hidden flex items-center justify-center;
+    background: linear-gradient(135deg, #f0fdf4 0%, #f8fafc 50%, #eff6ff 100%);
+  }
+  .login-blob {
+    @apply absolute rounded-full pointer-events-none;
+    filter: blur(80px);
+    opacity: 0.35;
+  }
+  .login-blob-tl {
+    width: 500px; height: 500px;
+    top: -150px; left: -150px;
+    background: radial-gradient(circle, #bbf7d0, #6ee7b7);
+  }
+  .login-blob-br {
+    width: 450px; height: 450px;
+    bottom: -150px; right: -100px;
+    background: radial-gradient(circle, #bfdbfe, #93c5fd);
+  }
+  .login-wrapper {
+    @apply relative z-10 flex flex-col items-center w-full;
+    max-width: 420px;
+    padding: 0 1.5rem;
+  }
+  .login-header {
+    @apply flex flex-col items-center mb-6;
+  }
+  .login-logo {
+    @apply flex items-center justify-center w-14 h-14 rounded-2xl mb-3;
+    background: linear-gradient(135deg, #2563eb, #1d4ed8);
+    box-shadow: 0 8px 24px rgba(37, 99, 235, 0.35);
+  }
+  .login-title {
+    @apply text-2xl font-extrabold text-gray-800 tracking-wide;
+  }
+  .login-subtitle {
+    @apply text-sm text-gray-500 mt-0.5;
+  }
+  .login-card {
+    @apply w-full bg-white rounded-2xl p-8;
+    box-shadow: 0 4px 32px rgba(0, 0, 0, 0.08), 0 1px 4px rgba(0, 0, 0, 0.04);
+  }
+  .login-card-heading {
+    @apply text-lg font-bold text-gray-800 mb-0.5;
+  }
+  .login-card-sub {
+    @apply text-sm text-gray-500 mb-5;
+  }
+  .login-error {
+    @apply mb-4 bg-red-50 border border-red-200 rounded-xl px-4 py-3 text-sm text-red-700;
+  }
+  .login-fields {
+    @apply flex flex-col gap-4;
+  }
+  .login-label {
+    @apply block text-sm font-medium text-gray-700 mb-1.5;
+  }
+  .login-input-wrap {
+    @apply relative flex items-center;
+  }
+  .login-input-icon {
+    @apply absolute left-3 text-gray-400 pointer-events-none;
+  }
+  .login-input {
+    @apply w-full border border-gray-200 rounded-xl pl-9 pr-4 py-2.5 text-sm bg-white
+           focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent
+           placeholder-gray-400 transition;
+  }
+  .login-btn {
+    @apply w-full py-3 rounded-xl text-white text-sm font-semibold transition-all
+           disabled:opacity-60 disabled:cursor-not-allowed mt-1;
+    background: linear-gradient(135deg, #2563eb, #1d4ed8);
+    box-shadow: 0 4px 14px rgba(37, 99, 235, 0.35);
+  }
+  .login-btn:hover:not(:disabled) {
+    background: linear-gradient(135deg, #1d4ed8, #1e40af);
+    box-shadow: 0 6px 18px rgba(37, 99, 235, 0.45);
+    transform: translateY(-1px);
+  }
+  .login-btn-loading {
+    @apply flex items-center justify-center gap-2;
+  }
+  .login-hint {
+    @apply text-xs text-gray-400 mt-5 pt-4 border-t border-gray-100;
+  }
+  .login-footer {
+    @apply mt-5 text-xs text-gray-400;
+  }
 }

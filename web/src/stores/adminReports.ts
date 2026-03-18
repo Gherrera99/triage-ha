@@ -21,6 +21,12 @@ function normalizeSelected(row: any) {
     // ✅ patient defaults
     row.patient ??= {};
     row.patient.mayaHabla = !!row.patient.mayaHabla;
+    // normalizar birthDate a "YYYY-MM-DD" para el input type="date"
+    if (row.patient.birthDate) {
+        row.patient.birthDate = String(row.patient.birthDate).slice(0, 10);
+    } else {
+        row.patient.birthDate = "";
+    }
 
     // ✅ medicalNote defaults (para que el modal siempre tenga qué renderizar)
     row.medicalNote ??= {
@@ -32,9 +38,11 @@ function normalizeSelected(row: any) {
         planTratamiento: "",
         pronostico: "",
         vigilancia: {},
+        vigilanciaTexto: "",
         contraRefFollowUp: false,
         contraRefWhen: "",
     };
+    row.medicalNote.vigilanciaTexto ??= "";
 
     // ✅ vigilancia: objeto con todas las keys
     row.medicalNote.vigilancia = {
@@ -51,7 +59,7 @@ function normalizeSelected(row: any) {
     return row;
 }
 
-type AdminTab = "ATTENDED" | "CANCELLED";
+type AdminTab = "ATTENDED" | "CANCELLED" | "CASHIER_CLOSED";
 
 export const useAdminReportsStore = defineStore("adminReports", {
     state: () => ({
@@ -61,6 +69,7 @@ export const useAdminReportsStore = defineStore("adminReports", {
         kpi: null as any | null,
 
         cancelledRows: [] as any[],
+        cashierClosedRows: [] as any[],
 
         q: "",
         classification: "" as "" | "VERDE" | "AMARILLO" | "ROJO",
@@ -117,6 +126,23 @@ export const useAdminReportsStore = defineStore("adminReports", {
             }
         },
 
+        async fetchCashierClosed() {
+            this.loading = true;
+            try {
+                const { data } = await api.get("/admin-reports/cashier-closed", {
+                    params: {
+                        q: this.q || undefined,
+                        classification: this.classification || undefined,
+                        startDate: this.startDate || undefined,
+                        endDate: this.endDate || undefined,
+                    },
+                });
+                this.cashierClosedRows = data.rows;
+            } finally {
+                this.loading = false;
+            }
+        },
+
         async open(id: number) {
             const { data } = await api.get(`/admin-reports/attended/${id}`);
             this.selected = normalizeSelected(data);
@@ -146,6 +172,7 @@ export const useAdminReportsStore = defineStore("adminReports", {
                         priorCarePlace: this.selected.priorCarePlace,
                         hasReferral: this.selected.hasReferral,
                         referralPlace: this.selected.referralPlace,
+                        observaciones: this.selected.observaciones,
                     },
                     payment: this.selected.payment
                         ? {
@@ -164,6 +191,7 @@ export const useAdminReportsStore = defineStore("adminReports", {
                             diagnostico: this.selected.medicalNote.diagnostico,
                             planTratamiento: this.selected.medicalNote.planTratamiento,
                             vigilancia: this.selected.medicalNote.vigilancia,
+                            vigilanciaTexto: this.selected.medicalNote.vigilanciaTexto,
                             contraRefFollowUp: this.selected.medicalNote.contraRefFollowUp,
                             contraRefWhen: this.selected.medicalNote.contraRefWhen,
                             pronostico: this.selected.medicalNote.pronostico,
@@ -182,8 +210,16 @@ export const useAdminReportsStore = defineStore("adminReports", {
         },
 
         async exportExcel() {
+            const typeMap: Record<AdminTab, string> = {
+                ATTENDED: "attended",
+                CANCELLED: "cancelled",
+                CASHIER_CLOSED: "cashierClosed",
+            };
+            const type = typeMap[this.tab];
+
             const { data } = await api.get("/admin-reports/attended-excel", {
                 params: {
+                    type,
                     q: this.q || undefined,
                     classification: this.classification || undefined,
                     startDate: this.startDate || undefined,
@@ -192,10 +228,15 @@ export const useAdminReportsStore = defineStore("adminReports", {
                 responseType: "blob",
             });
 
+            const nameMap: Record<AdminTab, string> = {
+                ATTENDED: "reporte_atendidos",
+                CANCELLED: "reporte_no_atendidos",
+                CASHIER_CLOSED: "reporte_solo_enfermeria",
+            };
             const url = URL.createObjectURL(new Blob([data], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }));
             const a = document.createElement("a");
             a.href = url;
-            a.download = "reporte_admin.xlsx";
+            a.download = `${nameMap[this.tab]}.xlsx`;
             a.click();
             setTimeout(() => URL.revokeObjectURL(url), 60_000);
         },

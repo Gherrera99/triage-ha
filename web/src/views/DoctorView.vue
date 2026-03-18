@@ -16,6 +16,12 @@ onMounted(async () => {
 onBeforeUnmount(() => {
   d.disposeRealtime();  // ✅ evita duplicados si vuelves a entrar
 });
+
+function classifTextClass(c: string) {
+  if (c === "ROJO") return "text-sm text-red-600";
+  if (c === "AMARILLO") return "text-sm text-yellow-600";
+  return "text-sm text-green-600";
+}
 </script>
 
 <template>
@@ -32,9 +38,7 @@ onBeforeUnmount(() => {
         >
           <div class="flex justify-between">
             <span class="font-medium">{{ t.patient.fullName }}</span>
-            <span class="text-sm"
-                  :class="t.classification==='ROJO' ? 'text-red-600' : t.classification==='AMARILLO' ? 'text-yellow-600' : 'text-green-600'"
-            >
+            <span :class="classifTextClass(t.classification)">
               {{ t.classification }}
             </span>
           </div>

@@ -138,6 +138,10 @@ export async function payTriage(req: Request, res: Response) {
         if (isConsulta(result?.motivoUrgencia) && !result?.closedAt) {
             emitToRole("DOCTOR", "triage:updated", result);
             emitToRole("DOCTOR", "payment:paid", result);
+        } else {
+            // ✅ si NO es consulta, notificar admin/consultor para refrescar pestaña "Solo Enfermería"
+            emitToRole("ADMIN", "report:updated", { triageId: result?.id });
+            emitToRole("CONSULTOR", "report:updated", { triageId: result?.id });
         }
 
         res.json(result);
@@ -184,6 +188,8 @@ export async function refusePayment(req: Request, res: Response) {
         emitToRole("CASHIER", "triage:updated", result);
         emitToRole("NURSE_TRIAGE", "triage:updated", result);
         // ❌ NO emitir a DOCTOR
+        emitToRole("ADMIN", "report:updated", { triageId: result.id });
+        emitToRole("CONSULTOR", "report:updated", { triageId: result.id });
 
         res.json(result);
     } catch (e: any) {
