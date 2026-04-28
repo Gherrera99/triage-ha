@@ -13,10 +13,18 @@ build/
 # Env files (NO subir secretos)
 .env
 **/.env
+*.env.local
+**/*.env.local
 .env.*
 **/.env.*
+# Excepciones: los archivos .example sí se versionar (son plantillas sin secretos)
 !.env.example
 !.env.template
+!**/.env.example
+!**/.env.template
+
+# Semilla de base de datos (puede contener datos sensibles o de prueba)
+api/prisma/seed.js
 
 # Logs
 *.log

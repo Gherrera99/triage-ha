@@ -4,4 +4,4 @@ import { getAdminReport } from "../controllers/admin.ctrl";
 
 export const adminRouter = Router();
 
-adminRouter.get("/report", requireAuth, requireRole(["ADMIN", "CONSULTOR"]), getAdminReport);
+adminRouter.get("/report", requireAuth, requireRole("ADMIN", "CONSULTOR"), getAdminReport);

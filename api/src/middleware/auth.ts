@@ -19,11 +19,12 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
     }
 }
 
-export function requireRole(roles: string[]) {
+// Firma variadic: requireRole("ADMIN") o requireRole("DOCTOR", "NURSE_TRIAGE")
+export function requireRole(...roles: string[]) {
     return (req: Request, res: Response, next: NextFunction) => {
         const user = (req as any).user;
 
-        // ✅ ADMIN como superusuario
+        // ADMIN actúa como superusuario: tiene acceso a cualquier recurso
         if (user?.role === "ADMIN") return next();
 
         if (!user || !roles.includes(user.role)) {

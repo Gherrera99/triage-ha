@@ -5,8 +5,8 @@ import { startConsultation, upsertNote, getPdf, finishConsultation, markNoShow }
 
 export const medicalRouter = Router();
 
-medicalRouter.post("/:triageId/start", requireAuth, requireRole(["DOCTOR"]), startConsultation);
-medicalRouter.put("/:triageId/note", requireAuth, requireRole(["DOCTOR"]), upsertNote);
-medicalRouter.get("/:triageId/pdf", requireAuth, requireRole(["DOCTOR"]), getPdf);
-medicalRouter.post("/:triageId/finish", requireAuth, requireRole(["DOCTOR"]), finishConsultation);
-medicalRouter.post("/:triageId/no-show", requireAuth, requireRole(["DOCTOR"]), markNoShow);
+medicalRouter.post("/:triageId/start", requireAuth, requireRole("DOCTOR"), startConsultation);
+medicalRouter.put("/:triageId/note", requireAuth, requireRole("DOCTOR"), upsertNote);
+medicalRouter.get("/:triageId/pdf", requireAuth, requireRole("DOCTOR"), getPdf);
+medicalRouter.post("/:triageId/finish", requireAuth, requireRole("DOCTOR"), finishConsultation);
+medicalRouter.post("/:triageId/no-show", requireAuth, requireRole("DOCTOR"), markNoShow);

@@ -1,12 +1,27 @@
+# ============================================================
+# docker-compose.yml
+#
+# Las credenciales de base de datos se leen desde variables de
+# entorno. Define estas variables en un archivo ".env" en la
+# raíz del repositorio (NUNCA lo subas a git):
+#
+#   MYSQL_ROOT_PASSWORD=<password-root-segura>
+#   MYSQL_PASSWORD=<password-del-usuario-triage>
+#
+# O expórtalas directamente en tu shell antes de levantar:
+#   export MYSQL_ROOT_PASSWORD=...
+#   export MYSQL_PASSWORD=...
+#   docker compose up -d --build
+# ============================================================
 services:
   mysql:
     image: mysql:8.0
     container_name: triage-mysql
     environment:
-      MYSQL_ROOT_PASSWORD: root
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
       MYSQL_DATABASE: triage_db
       MYSQL_USER: triage
-      MYSQL_PASSWORD: triage123
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
     ports:
       - "3307:3306"
     volumes:

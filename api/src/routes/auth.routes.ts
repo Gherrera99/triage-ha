@@ -5,4 +5,4 @@ import { requireAuth, requireRole } from "../middleware/auth";
 export const authRouter = Router();
 
 authRouter.post("/login", login);
-authRouter.post("/register", requireAuth, requireRole(["ADMIN"]), register);
+authRouter.post("/register", requireAuth, requireRole("ADMIN"), register);
