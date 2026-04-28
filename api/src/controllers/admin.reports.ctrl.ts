@@ -37,12 +37,21 @@ function minutesDiff(a?: Date | null, b?: Date | null) {
 }
 
 function parseRange(startDate?: string, endDate?: string) {
-    const now = new Date();
-    const start = startDate ? new Date(startDate) : new Date(now);
-    start.setHours(0, 0, 0, 0);
+    // Usamos el offset fijo -06:00 (CST, Mérida) en lugar de setHours() que aplica
+    // el timezone del proceso (UTC en Docker) y recortaría 6 horas del inicio del día.
+    // Mismo patrón que nurseOwnReport en triage.ctrl.ts.
+    const todayStr = new Intl.DateTimeFormat("sv-SE", {
+        timeZone: "America/Merida",
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+    }).format(new Date());
 
-    const end = endDate ? new Date(endDate) : new Date(now);
-    end.setHours(23, 59, 59, 999);
+    const sd = startDate ?? todayStr;
+    const ed = endDate ?? todayStr;
+
+    const start = new Date(`${sd}T00:00:00-06:00`);
+    const end = new Date(`${ed}T23:59:59.999-06:00`);
 
     return { start, end };
 }
@@ -336,7 +345,9 @@ export const adminReportsCtrl = {
                         estudiosParaclinicos: medicalNote.estudiosParaclinicos ?? undefined,
                         diagnostico: medicalNote.diagnostico ?? undefined,
                         planTratamiento: medicalNote.planTratamiento ?? undefined,
-                        vigilancia: medicalNote.vigilancia ?? undefined,
+                        // vigilancia fue eliminado en migración 20260312185936_vigilancia_texto;
+                        // solo existe vigilanciaTexto. El frontend puede seguir enviando el campo
+                        // viejo sin problema — Prisma simplemente lo ignora al no estar aquí.
                         vigilanciaTexto: medicalNote.vigilanciaTexto ?? undefined,
                         contraRefFollowUp: medicalNote.contraRefFollowUp ?? undefined,
                         contraRefWhen: medicalNote.contraRefWhen ?? undefined,

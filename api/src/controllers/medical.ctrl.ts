@@ -103,17 +103,34 @@ export async function upsertNote(req: Request, res: Response) {
     const triageId = Number(req.params.triageId);
     const data = req.body ?? {};
 
+    // Validación: la nota médica debe existir (creada por startConsultation) y la consulta
+    // debe haber sido iniciada formalmente. Esto bloquea el caso anómalo en que un doctor
+    // intente guardar nota sin que el paciente haya pasado por caja y el médico haya
+    // presionado "Iniciar consulta".
     const existing = await prisma.medicalNote.findUnique({ where: { triageId } });
-    if (existing && existing.doctorId !== doctor.id) {
+
+    if (!existing) {
+        return res.status(400).json({
+            error: "La consulta no ha sido iniciada. El paciente debe pagar y el médico debe iniciar la consulta antes de capturar nota.",
+        });
+    }
+
+    if (!existing.consultationStartedAt) {
+        return res.status(400).json({
+            error: "La consulta no ha sido iniciada. El paciente debe pagar y el médico debe iniciar la consulta antes de capturar nota.",
+        });
+    }
+
+    if (existing.doctorId !== doctor.id) {
         return res.status(409).json({ error: "Este paciente pertenece a otro médico" });
     }
 
-    // ✅ contrarreferencia “texto legacy” (para no romper reportes viejos)
+    // ✅ contrarreferencia "texto legacy" (para no romper reportes viejos)
     const followUp = !!data.contraRefFollowUp;
     const when = typeof data.contraRefWhen === "string" ? data.contraRefWhen.trim() : "";
     const contraLegacy = followUp ? (when ? `SI - ${when}` : "SI") : "NO";
 
-    // ✅ vigilanciaTexto (nuevo); si te llega algo viejo, lo convierte a texto
+    // ✅ vigilanciaTexto (nuevo); si llega el campo viejo, lo convierte a texto
     const vigilanciaTexto =
         typeof data.vigilanciaTexto === "string"
             ? data.vigilanciaTexto
@@ -121,29 +138,11 @@ export async function upsertNote(req: Request, res: Response) {
                 ? data.vigilancia
                 : "";
 
-    const note = await prisma.medicalNote.upsert({
+    // La creación de MedicalNote queda exclusivamente en startConsultation.
+    // Aquí solo actualizamos -- nunca creamos desde cero.
+    const note = await prisma.medicalNote.update({
         where: { triageId },
-        create: {
-            triageId,
-            doctorId: doctor.id,
-            consultationStartedAt: new Date(),
-
-            padecimientoActual: asText(data.padecimientoActual),
-            antecedentes: asText(data.antecedentes),
-            exploracionFisica: asText(data.exploracionFisica),
-            estudiosParaclinicos: asText(data.estudiosParaclinicos),
-            diagnostico: asText(data.diagnostico),
-            planTratamiento: asText(data.planTratamiento),
-
-            vigilanciaTexto: asText(vigilanciaTexto),
-
-            contraRefFollowUp: followUp,
-            contraRefWhen: when || null,
-            contrarreferencia: contraLegacy,
-
-            pronostico: asText(data.pronostico),
-        },
-        update: {
+        data: {
             // ✅ NO tocar consultationStartedAt aquí
             padecimientoActual: asText(data.padecimientoActual),
             antecedentes: asText(data.antecedentes),
@@ -248,16 +247,36 @@ export async function finishConsultation(req: Request, res: Response) {
         return res.status(409).json({ error: "Este paciente pertenece a otro médico" });
     }
 
-    const note = await prisma.medicalNote.update({
-        where: { triageId },
-        data: { consultationFinishedAt: new Date() },
-        include: { doctor: { select: { name: true, cedula: true } } },
-    });
+    try {
+        // Transacción atómica: ambas actualizaciones deben persistir juntas o ninguna.
+        // closedAt/closedReason en TriageRecord es un campo médico-legal -- no puede quedar
+        // desincronizado con consultationFinishedAt en MedicalNote.
+        const { note } = await prisma.$transaction(async (tx) => {
+            const updatedNote = await tx.medicalNote.update({
+                where: { triageId },
+                data: { consultationFinishedAt: new Date() },
+                include: { doctor: { select: { name: true, cedula: true } } },
+            });
 
-    emitToRole("NURSE_TRIAGE", "consultation:finished", { triageId, doctorId: doctor.id });
-    emitToRole("DOCTOR", "consultation:finished", { triageId, doctorId: doctor.id });
-    emitToRole("ADMIN", "report:updated", { triageId });
-    emitToRole("CONSULTOR", "report:updated", { triageId });
+            await tx.triageRecord.update({
+                where: { id: triageId },
+                data: {
+                    closedAt: updatedNote.consultationFinishedAt!,
+                    closedReason: "DOCTOR_FINISHED",
+                },
+            });
 
-    res.json(note);
+            return { note: updatedNote };
+        });
+
+        emitToRole("NURSE_TRIAGE", "consultation:finished", { triageId, doctorId: doctor.id });
+        emitToRole("DOCTOR", "consultation:finished", { triageId, doctorId: doctor.id });
+        emitToRole("ADMIN", "report:updated", { triageId });
+        emitToRole("CONSULTOR", "report:updated", { triageId });
+
+        res.json(note);
+    } catch (e: any) {
+        const status = e?.status || 500;
+        res.status(status).json({ error: e?.message || "Error al finalizar la consulta" });
+    }
 }

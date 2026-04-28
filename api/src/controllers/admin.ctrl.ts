@@ -6,8 +6,10 @@ export async function getAdminReport(req: Request, res: Response) {
     const { startDate, endDate } = req.query as { startDate: string; endDate: string };
     if (!startDate || !endDate) return res.status(400).json({ message: "startDate y endDate requeridos" });
 
-    const start = new Date(`${startDate}T00:00:00.000Z`);
-    const end = new Date(`${endDate}T23:59:59.999Z`);
+    // Offset -06:00 (CST, Mérida) para que el inicio y fin del día sean correctos.
+    // Con .000Z el rango comenzaba a las 06:00 hora local, perdiendo la madrugada.
+    const start = new Date(`${startDate}T00:00:00-06:00`);
+    const end = new Date(`${endDate}T23:59:59.999-06:00`);
 
     const rows = await prisma.triageRecord.findMany({
         where: { triageAt: { gte: start, lte: end } },
