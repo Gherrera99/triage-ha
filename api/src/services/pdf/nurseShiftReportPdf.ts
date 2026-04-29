@@ -150,13 +150,16 @@ export function buildNurseShiftReportPdf(params: {
     y += stripH + 8;
 
     // ─── TABLE ───────────────────────────────────────────────────
+    // Ancho total disponible (W = page - 2*M = 540pt en LETTER).
+    // Se ensancha 'edad' para acomodar "X anios Y meses" sin truncar,
+    // y se estrechan 'expediente' y 'motivo' compensando.
     const cols = {
-        fecha:      110,
-        expediente:  80,
+        fecha:      105,
+        expediente:  65,
         paciente:   160,
-        edad:        40,
-        motivo:     110,
-        clasif:      W - 110 - 80 - 160 - 40 - 110, // remaining
+        edad:        65,
+        motivo:      95,
+        clasif:      W - 105 - 65 - 160 - 65 - 95, // remaining = 50pt
     };
 
     const headerH2 = 22;
@@ -207,15 +210,16 @@ export function buildNurseShiftReportPdf(params: {
         cell(r.patient?.age        || "—",         cols.edad,       { align: "center" });
         cell(r.motivoUrgencia      || "—",         cols.motivo);
 
+        // Clasificacion: texto en color (sin fondo ni borde) para que se imprima
+        // claramente y no se vea opaco con tintas de transparencia.
         const cl = (r.classification || "").toUpperCase();
         const clColor = clasifColor(cl);
-        // colored badge in clasif cell
-        const badgeX = rx + (cols.clasif - 44) / 2;
-        const badgeY = yy + (rowH - 13) / 2;
-        fillRect(doc, badgeX, badgeY, 44, 13, clColor + "22");
-        doc.save().rect(badgeX, badgeY, 44, 13).lineWidth(0.6).strokeColor(clColor).stroke().restore();
-        doc.font("Helvetica-Bold").fontSize(7).fillColor(clColor)
-            .text(cl, badgeX, badgeY + 2.5, { width: 44, align: "center" });
+        textBox(doc, cl, rx, yy, cols.clasif, rowH, {
+            bold: true,
+            align: "center",
+            color: clColor,
+            size: 8,
+        });
 
         rowIndex++;
     }
