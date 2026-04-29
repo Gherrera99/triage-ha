@@ -13,10 +13,15 @@
 const DEFAULT_TEXT = "Nuevo paciente en espera";
 const DEFAULT_LANG = "es-MX";
 const REPEAT_MS = 6000;
+// El motor TTS de Windows (SAPI) puede entrar en idle tras unos minutos sin uso,
+// devolviendo el lag inicial. Mantenemos un warm-up silencioso periodico mientras
+// haya una vista activa que pueda recibir alertas (caja, doctor).
+const KEEP_ALIVE_MS = 90_000;
 
 let cachedVoice: SpeechSynthesisVoice | null = null;
 let primed = false;
 let intervalId: number | null = null;
+let keepAliveId: number | null = null;
 
 function pickSpanishVoice(voices: SpeechSynthesisVoice[]): SpeechSynthesisVoice | null {
     if (!voices.length) return null;
@@ -120,5 +125,49 @@ export function stopAlertLoop(): void {
         window.speechSynthesis?.cancel();
     } catch {
         /* silencio */
+    }
+}
+
+/**
+ * Dispara un speak() silencioso de un caracter, sin afectar al usuario, para
+ * mantener despierto el motor TTS de Windows (SAPI) y evitar que el primer
+ * anuncio real vuelva a tardar tras un periodo de inactividad. No interrumpe
+ * un anuncio en curso.
+ */
+function ttsKeepAliveTick(): void {
+    const synth = window.speechSynthesis;
+    if (!synth) return;
+    // Si ya esta hablando o pendiente, no interrumpas la alerta real.
+    if (synth.speaking || synth.pending) return;
+    try {
+        const utter = new SpeechSynthesisUtterance(" ");
+        if (cachedVoice) utter.voice = cachedVoice;
+        utter.lang = DEFAULT_LANG;
+        utter.volume = 0;
+        utter.rate = 1;
+        synth.speak(utter);
+    } catch {
+        /* silencio */
+    }
+}
+
+/**
+ * Inicia un warm-up periodico silencioso (cada KEEP_ALIVE_MS) para mantener
+ * despierto el motor TTS. Idempotente. Se debe llamar al montar las vistas
+ * que reciben alertas (caja, doctor).
+ */
+export function startKeepAlive(): void {
+    if (keepAliveId !== null) return;
+    if (!window.speechSynthesis) return;
+    keepAliveId = window.setInterval(ttsKeepAliveTick, KEEP_ALIVE_MS);
+}
+
+/**
+ * Detiene el warm-up periodico. Llamar al desmontar las vistas que lo iniciaron.
+ */
+export function stopKeepAlive(): void {
+    if (keepAliveId !== null) {
+        clearInterval(keepAliveId);
+        keepAliveId = null;
     }
 }

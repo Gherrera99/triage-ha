@@ -2,6 +2,7 @@
 import { onMounted, onBeforeUnmount, ref } from "vue";
 import { useRouter } from "vue-router";
 import { useDoctorStore } from "../stores/doctor";
+import { startKeepAlive, stopKeepAlive } from "../services/speechAlert";
 
 const d = useDoctorStore();
 const router = useRouter();
@@ -93,11 +94,16 @@ function resume(row: any) {
 }
 
 onMounted(async () => {
+  // Mantiene despierto el motor TTS mientras la vista del doctor este montada.
+  startKeepAlive();
   d.initRealtime();
   await d.refreshAll();
 });
 
-onBeforeUnmount(() => d.disposeRealtime());
+onBeforeUnmount(() => {
+  d.disposeRealtime();
+  stopKeepAlive();
+});
 </script>
 
 <template>

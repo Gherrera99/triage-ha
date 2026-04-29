@@ -2,7 +2,7 @@
 import { computed, onMounted, ref, onBeforeUnmount } from "vue";
 import { useCashierStore, type TriageColor, type CashierQueueRow } from "../stores/cashier";
 import { useSocket } from "../composables/useSocket";
-import { startAlertLoop, stopAlertLoop } from "../services/speechAlert";
+import { startAlertLoop, stopAlertLoop, startKeepAlive, stopKeepAlive } from "../services/speechAlert";
 
 const s = useCashierStore();
 const { socket } = useSocket();
@@ -107,6 +107,9 @@ onBeforeUnmount(() => {
 });
 
 onMounted(async () => {
+  // Mantiene despierto el motor TTS mientras la vista de caja este montada.
+  startKeepAlive();
+
   await s.fetchQueue();
 
   const onNew = async (row: any) => {
@@ -126,6 +129,7 @@ onMounted(async () => {
 onBeforeUnmount(() => {
   off1?.();
   off2?.();
+  stopKeepAlive();
 });
 
 const filtered = computed(() => {
