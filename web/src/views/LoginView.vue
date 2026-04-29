@@ -2,6 +2,7 @@
 import { ref } from "vue";
 import { useAuthStore } from "../stores/auth";
 import { useRouter } from "vue-router";
+import { primeSpeech } from "../services/speechAlert";
 
 const auth = useAuthStore();
 const router = useRouter();
@@ -25,6 +26,9 @@ function homeByRole(role?: string) {
 async function submit() {
   errorMsg.value = "";
   loading.value = true;
+  // Pre-calienta el motor TTS aprovechando el user gesture del click.
+  // Sin esto, el primer "Nuevo paciente en espera" tarda 300-1000ms en sonar.
+  primeSpeech();
   try {
     await auth.login(email.value, password.value);
     router.push(homeByRole(auth.user?.role));

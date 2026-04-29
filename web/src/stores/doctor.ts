@@ -2,6 +2,7 @@
 import { defineStore } from "pinia";
 import { api } from "../services/api";
 import { getSocket } from "../services/socket";
+import { startAlertLoop, stopAlertLoop } from "../services/speechAlert";
 
 type Row = any;
 type Tab = "WAITING" | "CONSULTING" | "ATTENDED" | "CANCELLED";
@@ -55,7 +56,6 @@ export const useDoctorStore = defineStore("doctor", {
 
         // alertas
         alertQueue: [] as any[],
-        _beepTimer: null as any,
         _notifiedIds: [] as number[],
     }),
 
@@ -258,32 +258,13 @@ export const useDoctorStore = defineStore("doctor", {
             return diff >= 0 && diff < 24 * 60 * 60 * 1000;
         },
 
-        // ====== ALERTAS SONORAS ======
-        announcePatient() {
-            try {
-                if (!window.speechSynthesis) return;
-                window.speechSynthesis.cancel();
-                const utter = new SpeechSynthesisUtterance("Nuevo Paciente en espera");
-                utter.lang = "es-MX";
-                utter.rate = 0.9;
-                utter.pitch = 1;
-                utter.volume = 1;
-                window.speechSynthesis.speak(utter);
-            } catch {}
-        },
-
+        // ====== ALERTAS SONORAS (delegado a services/speechAlert) ======
         startAlertSound(_classification: string) {
-            this.stopAlertSound();
-            this.announcePatient();
-            this._beepTimer = setInterval(() => this.announcePatient(), 6000);
+            startAlertLoop();
         },
 
         stopAlertSound() {
-            if (this._beepTimer) {
-                clearInterval(this._beepTimer);
-                this._beepTimer = null;
-            }
-            try { window.speechSynthesis.cancel(); } catch {}
+            stopAlertLoop();
         },
 
         enqueueAlert(row: any) {

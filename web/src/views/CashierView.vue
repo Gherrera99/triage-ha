@@ -2,6 +2,7 @@
 import { computed, onMounted, ref, onBeforeUnmount } from "vue";
 import { useCashierStore, type TriageColor, type CashierQueueRow } from "../stores/cashier";
 import { useSocket } from "../composables/useSocket";
+import { startAlertLoop, stopAlertLoop } from "../services/speechAlert";
 
 const s = useCashierStore();
 const { socket } = useSocket();
@@ -24,33 +25,12 @@ const alertQueue = ref<any[]>([]);
 const showAlert = ref(false);
 const alertRow = ref<any | null>(null);
 
-let alertInterval: number | null = null;
-
-function announcePatient() {
-  try {
-    if (!window.speechSynthesis) return;
-    window.speechSynthesis.cancel();
-    const utter = new SpeechSynthesisUtterance("Nuevo Paciente en espera");
-    utter.lang = "es-MX";
-    utter.rate = 0.9;
-    utter.pitch = 1;
-    utter.volume = 1;
-    window.speechSynthesis.speak(utter);
-  } catch {}
-}
-
 function startAlertSound(_color: string) {
-  stopAlertSound();
-  announcePatient();
-  alertInterval = window.setInterval(announcePatient, 6000);
+  startAlertLoop();
 }
 
 function stopAlertSound() {
-  if (alertInterval) {
-    clearInterval(alertInterval);
-    alertInterval = null;
-  }
-  try { window.speechSynthesis.cancel(); } catch {}
+  stopAlertLoop();
 }
 
 function openAlert(row: any) {
