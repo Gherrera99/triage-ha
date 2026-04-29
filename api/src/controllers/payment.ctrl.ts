@@ -59,6 +59,12 @@ export async function payTriage(req: Request, res: Response) {
 
             if (!triage) throw Object.assign(new Error("No existe el triage"), { status: 404 });
 
+            // bloquea cobros sobre triages ya cerrados (REFUSED_PAYMENT, NO_SHOW, etc.)
+            // para evitar estados contradictorios (paidStatus=PAID con closedReason=REFUSED_PAYMENT)
+            if (triage.closedAt || triage.refusedPayment || triage.noShow) {
+                throw Object.assign(new Error("Este paciente ya fue cerrado y no acepta pagos"), { status: 409 });
+            }
+
             // ✅ permitir actualizar expediente incluso si ya estaba pagado
             await applyExpedienteIfProvided(tx, triageId, expediente);
 
