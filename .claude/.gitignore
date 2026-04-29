@@ -1,0 +1,6 @@
+# Configuracion personal por maquina (permisos del usuario actual)
+settings.local.json
+
+# Worktrees temporales creados por agentes en modo isolation
+# Contienen clones completos del proyecto y archivos .env con secretos
+worktrees/
