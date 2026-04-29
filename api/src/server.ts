@@ -7,7 +7,6 @@ import { authRouter } from "./routes/auth.routes";
 import { triageRouter } from "./routes/triage.routes";
 import { paymentRouter } from "./routes/payment.routes";
 import { medicalRouter } from "./routes/medical.routes";
-import { adminRouter } from "./routes/admin.routes";
 import { usersRouter } from "./routes/users.routes";
 import adminReportsRouter from "./routes/admin.reports.routes";
 
@@ -51,7 +50,6 @@ app.use("/auth", authRouter);
 app.use("/triage", triageRouter);
 app.use("/payments", paymentRouter);
 app.use("/medical", medicalRouter);
-app.use("/admin", adminRouter);
 app.use("/users", usersRouter);
 app.use("/admin-reports", adminReportsRouter);
 

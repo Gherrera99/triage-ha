@@ -190,11 +190,8 @@ export async function createTriage(req: Request, res: Response) {
             },
         });
 
+        // Solo notifica a caja — el doctor ve al paciente únicamente tras el cobro (payment:paid)
         emitToRole("CASHIER", "triage:new", created);
-
-        if (consulta) {
-            emitToRole("DOCTOR", "triage:new", created);
-        }
 
         res.status(201).json(created);
     } catch (e: any) {

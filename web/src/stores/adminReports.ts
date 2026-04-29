@@ -1,19 +1,6 @@
 import { defineStore } from "pinia";
 import { api } from "../services/api";
 
-const VIG_DEFAULTS = {
-    vigFiebre38: false,
-    vigConvulsiones: false,
-    vigAlteracionAlerta: false,
-    vigSangradoActivo: false,
-    vigDeshidratacion: false,
-    vigVomitosFrecuentes: false,
-    vigIrritabilidad: false,
-    vigLlantoInconsolable: false,
-    vigDificultadRespiratoria: false,
-    vigChoque: false,
-    vigDeterioroNeurologico: false,
-};
 
 function normalizeSelected(row: any) {
     if (!row) return row;
@@ -37,20 +24,11 @@ function normalizeSelected(row: any) {
         diagnostico: "",
         planTratamiento: "",
         pronostico: "",
-        vigilancia: {},
         vigilanciaTexto: "",
         contraRefFollowUp: false,
         contraRefWhen: "",
     };
     row.medicalNote.vigilanciaTexto ??= "";
-
-    // ✅ vigilancia: objeto con todas las keys
-    row.medicalNote.vigilancia = {
-        ...VIG_DEFAULTS,
-        ...(row.medicalNote.vigilancia && typeof row.medicalNote.vigilancia === "object"
-            ? row.medicalNote.vigilancia
-            : {}),
-    };
 
     // ✅ contraRef: asegúralos para checkbox + input
     row.medicalNote.contraRefFollowUp = !!row.medicalNote.contraRefFollowUp;
@@ -190,7 +168,6 @@ export const useAdminReportsStore = defineStore("adminReports", {
                             estudiosParaclinicos: this.selected.medicalNote.estudiosParaclinicos,
                             diagnostico: this.selected.medicalNote.diagnostico,
                             planTratamiento: this.selected.medicalNote.planTratamiento,
-                            vigilancia: this.selected.medicalNote.vigilancia,
                             vigilanciaTexto: this.selected.medicalNote.vigilanciaTexto,
                             contraRefFollowUp: this.selected.medicalNote.contraRefFollowUp,
                             contraRefWhen: this.selected.medicalNote.contraRefWhen,

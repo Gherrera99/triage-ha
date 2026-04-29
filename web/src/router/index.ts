@@ -1,6 +1,5 @@
 import { createRouter, createWebHistory } from "vue-router";
 import LoginView from "../views/LoginView.vue";
-import DoctorView from "../views/DoctorView.vue";
 import CashierView from "../views/CashierView.vue";
 import TriageNurseView from "../views/TriageNurseView.vue";
 import AdminDashboard from "../views/AdminDashboard.vue";
