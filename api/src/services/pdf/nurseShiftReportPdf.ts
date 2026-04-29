@@ -56,12 +56,13 @@ function textBox(
     doc: PDFKit.PDFDocument,
     text: string,
     x: number, y: number, w: number, h: number,
-    opts?: { size?: number; bold?: boolean; align?: "left" | "center" | "right"; color?: string; pad?: number }
+    opts?: { size?: number; bold?: boolean; align?: "left" | "center" | "right"; color?: string; pad?: number; wrap?: boolean }
 ) {
     const size  = opts?.size  ?? 8;
     const pad   = opts?.pad   ?? 3;
     const align = opts?.align ?? "left";
     const color = opts?.color ?? C.black;
+    const wrap  = opts?.wrap  ?? false;
 
     doc.font(opts?.bold ? "Helvetica-Bold" : "Helvetica")
         .fontSize(size)
@@ -74,7 +75,9 @@ function textBox(
         width: w - pad * 2,
         height: h - pad * 2,
         align,
-        ellipsis: true,
+        // wrap=true permite que el texto se distribuya en varias lineas dentro
+        // de la celda. Por defecto se trunca con ellipsis para mantener el layout.
+        ellipsis: !wrap,
     });
 }
 
@@ -151,15 +154,15 @@ export function buildNurseShiftReportPdf(params: {
 
     // ─── TABLE ───────────────────────────────────────────────────
     // Ancho total disponible (W = page - 2*M = 540pt en LETTER).
-    // Se ensancha 'edad' para acomodar "X anios Y meses" sin truncar,
-    // y se estrechan 'expediente' y 'motivo' compensando.
+    // Las filas son altas (rowH=34) para permitir que la edad y el motivo
+    // largo se distribuyan en dos lineas sin truncarse.
     const cols = {
         fecha:      105,
-        expediente:  65,
-        paciente:   160,
-        edad:        65,
-        motivo:      95,
-        clasif:      W - 105 - 65 - 160 - 65 - 95, // remaining = 50pt
+        expediente:  70,
+        paciente:   155,
+        edad:        55,
+        motivo:     105,
+        clasif:      W - 105 - 70 - 155 - 55 - 105, // remaining = 50pt
     };
 
     const headerH2 = 22;
@@ -186,7 +189,9 @@ export function buildNurseShiftReportPdf(params: {
 
     y += headerH2;
 
-    const rowH = 24;
+    // Filas mas altas para que la edad ("X anios Y meses") y el motivo
+    // largo puedan distribuirse en dos lineas sin truncarse.
+    const rowH = 34;
     let rowIndex = 0;
 
     function drawRow(r: any, yy: number) {
@@ -195,8 +200,14 @@ export function buildNurseShiftReportPdf(params: {
         doc.rect(M, yy, W, rowH).lineWidth(0.4).strokeColor("#e5e7eb").stroke();
 
         let rx = M;
-        function cell(text: string, w: number, opts?: { align?: "left" | "center" | "right"; color?: string; bold?: boolean }) {
-            textBox(doc, text, rx, yy, w, rowH, { size: 7.8, align: opts?.align ?? "left", color: opts?.color, bold: opts?.bold });
+        function cell(text: string, w: number, opts?: { align?: "left" | "center" | "right"; color?: string; bold?: boolean; wrap?: boolean }) {
+            textBox(doc, text, rx, yy, w, rowH, {
+                size: 7.8,
+                align: opts?.align ?? "left",
+                color: opts?.color,
+                bold: opts?.bold,
+                wrap: opts?.wrap,
+            });
             if (rx + w < M + W) {
                 doc.save().strokeColor("#e5e7eb").lineWidth(0.4)
                     .moveTo(rx + w, yy).lineTo(rx + w, yy + rowH).stroke().restore();
@@ -207,8 +218,8 @@ export function buildNurseShiftReportPdf(params: {
         cell(fmtDateTime(r.triageAt),              cols.fecha);
         cell(r.patient?.expediente || "—",         cols.expediente, { align: "center" });
         cell(r.patient?.fullName   || "—",         cols.paciente,   { bold: true });
-        cell(r.patient?.age        || "—",         cols.edad,       { align: "center" });
-        cell(r.motivoUrgencia      || "—",         cols.motivo);
+        cell(r.patient?.age        || "—",         cols.edad,       { align: "center", wrap: true });
+        cell(r.motivoUrgencia      || "—",         cols.motivo,     { wrap: true });
 
         // Clasificacion: texto en color (sin fondo ni borde) para que se imprima
         // claramente y no se vea opaco con tintas de transparencia.
