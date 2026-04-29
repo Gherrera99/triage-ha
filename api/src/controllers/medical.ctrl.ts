@@ -3,17 +3,15 @@ import { Request, Response } from "express";
 import { prisma } from "../prisma";
 import { buildTriagePdf } from "../services/pdf/triagePdf";
 import { emitToRole } from "../socket";
-
-function isConsulta(motivo: any) {
-    return String(motivo ?? "").trim().toUpperCase() === "CONSULTA";
-}
+import { isConsulta } from "../utils/triage.utils";
 
 function asText(v: any) {
     return typeof v === "string" ? v : "";
 }
 
 export async function startConsultation(req: Request, res: Response) {
-    const doctor = (req as any).user;
+    const doctor = req.user;
+    if (!doctor) return res.status(401).json({ error: "No autenticado" });
     const triageId = Number(req.params.triageId);
 
     try {
@@ -99,7 +97,8 @@ export async function startConsultation(req: Request, res: Response) {
 }
 
 export async function upsertNote(req: Request, res: Response) {
-    const doctor = (req as any).user;
+    const doctor = req.user;
+    if (!doctor) return res.status(401).json({ error: "No autenticado" });
     const triageId = Number(req.params.triageId);
     const data = req.body ?? {};
 
@@ -187,7 +186,8 @@ export async function getPdf(req: Request, res: Response) {
 
 // ✅ NUEVO: doctor marca "No se presentó al llamado"
 export async function markNoShow(req: Request, res: Response) {
-    const doctor = (req as any).user;
+    const doctor = req.user;
+    if (!doctor) return res.status(401).json({ error: "No autenticado" });
     const triageId = Number(req.params.triageId);
     const reason = String(req.body?.reason ?? "").trim();
 
@@ -237,7 +237,8 @@ export async function markNoShow(req: Request, res: Response) {
 }
 
 export async function finishConsultation(req: Request, res: Response) {
-    const doctor = (req as any).user;
+    const doctor = req.user;
+    if (!doctor) return res.status(401).json({ error: "No autenticado" });
     const triageId = Number(req.params.triageId);
 
     const existing = await prisma.medicalNote.findUnique({ where: { triageId } });

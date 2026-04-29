@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref, onBeforeUnmount, watch } from "vue";
-import { useTriageNurseStore, type TriageColor, type NurseTriageRow } from "../stores/triageNurse";
+import { useTriageNurseStore, type NurseTriageRow } from "../stores/triageNurse";
+import { slaMinutes, type TriageColor } from "../utils/triage";
 import { useSocket } from "../composables/useSocket";
 import TriageGuideTable from "../components/TriageGuideTable.vue";
 
@@ -169,9 +170,6 @@ function payBadgeClass(paid: string) {
   return base + (paid === "PAID" ? "bg-emerald-100 text-emerald-700" : "bg-gray-100 text-gray-600");
 }
 
-function slaMinutes(c: TriageColor) {
-  return c === "VERDE" ? 45 : c === "AMARILLO" ? 30 : 0;
-}
 
 function payLabel(v: "PENDING" | "PAID") {
   return v === "PAID" ? "Pagado" : "Pendiente";

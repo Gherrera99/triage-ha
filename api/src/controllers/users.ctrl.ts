@@ -122,7 +122,7 @@ export const usersCtrl = {
     // DELETE /users/:id
     remove: async (req: Request, res: Response) => {
         const id = Number(req.params.id);
-        const me = (req as any).user;
+        const me = req.user;
 
         if (!id || Number.isNaN(id)) return res.status(400).json({ error: "id inválido" });
         if (me?.id === id) return res.status(400).json({ error: "No puedes eliminar tu propio usuario" });

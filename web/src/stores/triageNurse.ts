@@ -1,5 +1,5 @@
 import { defineStore } from "pinia";
-import { http } from "../api/http";
+import { api } from "../services/api";
 
 export type TriageColor = "VERDE" | "AMARILLO" | "ROJO";
 
@@ -61,7 +61,7 @@ export const useTriageNurseStore = defineStore("triageNurse", {
         async createTriage(payload: any) {
             this.saving = true;
             try {
-                const { data } = await http.post("/triage", payload);
+                const { data } = await api.post("/triage", payload);
                 await this.fetchRecent();
                 return data;
             } finally {
@@ -72,7 +72,7 @@ export const useTriageNurseStore = defineStore("triageNurse", {
         async fetchRecent() {
             this.loading = true;
             try {
-                const { data } = await http.get("/triage/nurse/recent");
+                const { data } = await api.get("/triage/nurse/recent");
                 this.rows = data;
             } finally {
                 this.loading = false;
@@ -86,7 +86,7 @@ export const useTriageNurseStore = defineStore("triageNurse", {
         async revalue(id: number, payload: any) {
             this.saving = true;
             try {
-                const { data } = await http.put(`/triage/${id}/revalue`, payload);
+                const { data } = await api.put(`/triage/${id}/revalue`, payload);
                 await this.fetchRecent();
                 this.selected = data;
                 return data;
@@ -96,7 +96,7 @@ export const useTriageNurseStore = defineStore("triageNurse", {
         },
 
         async openOwnReportPdf() {
-            const { data } = await http.get("/triage/nurse/report/pdf", {
+            const { data } = await api.get("/triage/nurse/report/pdf", {
                 responseType: "blob",
             });
 

@@ -3,6 +3,7 @@ import { prisma } from "../prisma";
 import { emitToRole } from "../socket";
 import { Sex, TriageColor } from "@prisma/client";
 import { buildNurseShiftReportPdf } from "../services/pdf/nurseShiftReportPdf";
+import { normalizeExpediente, isConsulta } from "../utils/triage.utils";
 
 function toSex(v: any): Sex | null {
     const s = String(v ?? "").toUpperCase();
@@ -27,21 +28,6 @@ function worstColor(a: TriageColor, b: TriageColor, c: TriageColor): TriageColor
         ROJO: 3,
     };
     return [a, b, c].sort((x, y) => rank[x] - rank[y])[2];
-}
-
-function normalizeExpediente(v: any): string | null {
-    const s = String(v ?? "").trim();
-    if (!s) return null;
-    const up = s.toUpperCase();
-
-    if (up === "SIN EXPEDIENTE" || up === "SIN EXPENDIENTE") return null;
-
-    return s;
-}
-
-function isConsulta(motivo: any): boolean {
-    const s = String(motivo ?? "").trim().toUpperCase();
-    return s === "CONSULTA";
 }
 
 function last24HoursRange() {
@@ -80,7 +66,7 @@ function calculateFullAgeFromBirthDate(input?: Date | null): string | null {
 
 export async function createTriage(req: Request, res: Response) {
     try {
-        const nurse = (req as any).user;
+        const nurse = req.user;
         if (!nurse?.id) return res.status(401).json({ error: "No autenticado" });
 
         const b = (req.body?.triage ?? req.body ?? {}) as any;
@@ -244,7 +230,8 @@ export async function listQueueForDoctor(req: Request, res: Response) {
 }
 
 export async function listRecentForNurse(req: Request, res: Response) {
-    const nurse = (req as any).user;
+    const nurse = req.user;
+    if (!nurse) return res.status(401).json({ error: "No autenticado" });
     const { start, end } = last24HoursRange();
 
     const rows = await prisma.triageRecord.findMany({
@@ -265,7 +252,8 @@ export async function listRecentForNurse(req: Request, res: Response) {
 }
 
 export async function revalueTriage(req: Request, res: Response) {
-    const nurse = (req as any).user;
+    const nurse = req.user;
+    if (!nurse) return res.status(401).json({ error: "No autenticado" });
     const id = Number(req.params.id);
     const b = (req.body ?? {}) as any;
 
@@ -357,7 +345,8 @@ export async function listWaitingForDoctor(req: Request, res: Response) {
 }
 
 export async function listMyConsultations(req: Request, res: Response) {
-    const doctor = (req as any).user;
+    const doctor = req.user;
+    if (!doctor) return res.status(401).json({ error: "No autenticado" });
     const { start, end } = last24HoursRange();
 
     const rows = await prisma.triageRecord.findMany({
@@ -385,7 +374,8 @@ export async function listMyConsultations(req: Request, res: Response) {
 }
 
 export async function listMyAttended(req: Request, res: Response) {
-    const doctor = (req as any).user;
+    const doctor = req.user;
+    if (!doctor) return res.status(401).json({ error: "No autenticado" });
     const { start, end } = last24HoursRange();
 
     const rows = await prisma.triageRecord.findMany({
@@ -450,7 +440,8 @@ export async function getDoctorTriageDetail(req: Request, res: Response) {
 }
 
 export async function nurseOwnReport(req: Request, res: Response) {
-    const nurse = (req as any).user;
+    const nurse = req.user;
+    if (!nurse) return res.status(401).json({ error: "No autenticado" });
 
     // ✅ Solo pacientes del día actual (no 24h), usando timezone America/Merida
     const now = new Date();

@@ -1,4 +1,4 @@
-import express from "express";
+import express, { NextFunction, Request, Response } from "express";
 import http from "http";
 import cors from "cors";
 import dotenv from "dotenv";
@@ -53,6 +53,15 @@ app.use("/medical", medicalRouter);
 app.use("/users", usersRouter);
 app.use("/admin-reports", adminReportsRouter);
 
+
+// Middleware de error global — debe registrarse DESPUÉS de todas las rutas.
+// Captura errores lanzados con next(err) o desde asyncHandler.
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
+    console.error("[error global]", err);
+    const status: number = typeof err?.status === "number" ? err.status : 500;
+    res.status(status).json({ error: err?.message || "Error interno del servidor" });
+});
 
 const server = http.createServer(app);
 initSocket(server);

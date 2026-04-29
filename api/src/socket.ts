@@ -36,7 +36,7 @@ export function initSocket(server: HttpServer) {
             const user = await prisma.user.findUnique({ where: { id: decoded.userId } });
             if (!user) return next(new Error("User not found"));
 
-            (socket as any).user = { id: user.id, role: user.role, name: user.name };
+            socket.user = { id: user.id, role: user.role, name: user.name };
             socket.join(`role:${user.role}`);
             socket.join(`user:${user.id}`);
             return next();
@@ -46,7 +46,7 @@ export function initSocket(server: HttpServer) {
     });
 
     io.on("connection", (socket) => {
-        const u = (socket as any).user;
+        const u = socket.user;
         console.log("socket connected", u);
 
         socket.on("disconnect", () => console.log("socket disconnected", u));

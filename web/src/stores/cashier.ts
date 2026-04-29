@@ -1,5 +1,5 @@
 import { defineStore } from "pinia";
-import { http } from "../api/http";
+import { api } from "../services/api";
 
 export type TriageColor = "VERDE" | "AMARILLO" | "ROJO";
 export type PaymentStatus = "PENDING" | "PAID";
@@ -17,7 +17,7 @@ export type CashierQueueRow = {
     patient: {
         expediente: string | null;
         fullName: string;
-        age: number | null;
+        age?: string | null;
         sex: "M" | "F" | "O" | null;
         mayaHabla: boolean;
         responsibleName: string | null;
@@ -38,7 +38,7 @@ export const useCashierStore = defineStore("cashier", {
         async fetchQueue() {
             this.loading = true;
             try {
-                const { data } = await http.get("/triage/cashier-queue");
+                const { data } = await api.get("/triage/cashier-queue");
                 this.rows = data;
             } finally {
                 this.loading = false;
@@ -48,7 +48,7 @@ export const useCashierStore = defineStore("cashier", {
         async markPaid(triageId: number, expediente?: string | null) {
             this.paying = true;
             try {
-                await http.post(`/payments/${triageId}/pay`, {
+                await api.post(`/payments/${triageId}/pay`, {
                     expediente: expediente ?? null,
                 });
                 await this.fetchQueue();
@@ -60,7 +60,7 @@ export const useCashierStore = defineStore("cashier", {
         async refusePayment(triageId: number) {
             this.refusing = true;
             try {
-                await http.post(`/payments/${triageId}/refuse`);
+                await api.post(`/payments/${triageId}/refuse`);
                 await this.fetchQueue();
             } finally {
                 this.refusing = false;

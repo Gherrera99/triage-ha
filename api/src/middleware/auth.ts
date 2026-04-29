@@ -12,7 +12,7 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
         const user = await prisma.user.findUnique({ where: { id: decoded.userId } });
         if (!user) return res.status(401).json({ message: "User no existe" });
 
-        (req as any).user = user;
+        req.user = user;
         next();
     } catch {
         return res.status(401).json({ message: "Token inválido" });
@@ -22,7 +22,7 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
 // Firma variadic: requireRole("ADMIN") o requireRole("DOCTOR", "NURSE_TRIAGE")
 export function requireRole(...roles: string[]) {
     return (req: Request, res: Response, next: NextFunction) => {
-        const user = (req as any).user;
+        const user = req.user;
 
         // ADMIN actúa como superusuario: tiene acceso a cualquier recurso
         if (user?.role === "ADMIN") return next();

@@ -2,22 +2,7 @@
 import { Request, Response } from "express";
 import { prisma } from "../prisma";
 import { emitToRole } from "../socket";
-
-function normalizeExpediente(v: any): string | null {
-    const s = String(v ?? "").trim();
-    if (!s) return null;
-    const up = s.toUpperCase();
-
-    // acepta variaciones/typos
-    if (up === "SIN EXPEDIENTE" || up === "SIN EXPENDIENTE") return null;
-
-    return s;
-}
-
-function isConsulta(motivo: any): boolean {
-    const s = String(motivo ?? "").trim().toUpperCase();
-    return s === "CONSULTA";
-}
+import { normalizeExpediente, isConsulta } from "../utils/triage.utils";
 
 async function applyExpedienteIfProvided(tx: any, triageId: number, expedienteRaw: any) {
     const expediente = normalizeExpediente(expedienteRaw);
@@ -51,7 +36,8 @@ async function applyExpedienteIfProvided(tx: any, triageId: number, expedienteRa
 }
 
 export async function payTriage(req: Request, res: Response) {
-    const cashier = (req as any).user;
+    const cashier = req.user;
+    if (!cashier) return res.status(401).json({ error: "No autenticado" });
     const triageId = Number(req.params.triageId);
 
     if (!triageId || Number.isNaN(triageId)) {
@@ -153,7 +139,8 @@ export async function payTriage(req: Request, res: Response) {
 
 // ✅ NUEVO: caja marca "No quiso pagar" => termina flujo y no llega a médico
 export async function refusePayment(req: Request, res: Response) {
-    const cashier = (req as any).user;
+    const cashier = req.user;
+    if (!cashier) return res.status(401).json({ error: "No autenticado" });
     const triageId = Number(req.params.triageId);
 
     if (!triageId || Number.isNaN(triageId)) {

@@ -2,9 +2,8 @@ import type { Request, Response } from "express";
 import { prisma } from "../prisma";
 import { emitToRole } from "../socket";
 import ExcelJS from "exceljs";
-
-// umbrales (min)
-const SLA: Record<string, number> = { VERDE: 45, AMARILLO: 30, ROJO: 15 };
+import { slaMinutes } from "../utils/triage.utils";
+import { TriageColor } from "@prisma/client";
 
 function fmtMeridaExcel(d?: Date | null) {
     if (!d) return "";
@@ -116,19 +115,19 @@ function buildWhere(query: any) {
 }
 
 function computeKpi(rows: any[]) {
-    const base = {
+    const base: Record<TriageColor, { total: number; ok: number; pct: number }> = {
         VERDE: { total: 0, ok: 0, pct: 0 },
         AMARILLO: { total: 0, ok: 0, pct: 0 },
         ROJO: { total: 0, ok: 0, pct: 0 },
     };
 
     for (const r of rows) {
-        const c = r.classification;
+        const c = r.classification as TriageColor;
         if (!base[c]) continue;
 
         base[c].total++;
         const wait = minutesDiff(r.triageAt, r.medicalNote?.consultationStartedAt);
-        if (wait !== null && wait <= SLA[c]) base[c].ok++;
+        if (wait !== null && wait <= slaMinutes(c)) base[c].ok++;
     }
 
     for (const k of Object.keys(base) as Array<keyof typeof base>) {
@@ -516,7 +515,8 @@ export const adminReportsCtrl = {
 
         for (const r of rows) {
             const p = r.patient ?? {};
-            const n = r.medicalNote ?? {};
+            // n puede ser null (pacientes no atendidos); se tipea como any para acceso seguro con ??
+            const n: any = r.medicalNote ?? {};
             const pay = r.payment ?? null;
 
             const rowData: any = {
@@ -561,8 +561,8 @@ export const adminReportsCtrl = {
             if (type !== "cashierClosed") {
                 const startAt = n.consultationStartedAt ?? null;
                 const wait = minutesDiff(r.triageAt, startAt);
-                const thr = SLA[r.classification] ?? null;
-                const ok = wait !== null && thr !== null ? (wait <= thr ? "SI" : "NO") : "";
+                const thr = slaMinutes(r.classification as TriageColor);
+                const ok = wait !== null ? (wait <= thr ? "SI" : "NO") : "";
 
                 Object.assign(rowData, {
                     pa: n.padecimientoActual ?? "",
