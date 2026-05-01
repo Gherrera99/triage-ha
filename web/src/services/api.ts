@@ -1,3 +1,4 @@
+// web/src/services/api.ts
 import axios from "axios";
 
 const API_BASE =
@@ -14,15 +15,37 @@ api.interceptors.request.use((config) => {
     return config;
 });
 
-// Si el servidor responde 401 (token expirado o inválido), limpiar sesión y redirigir al login
 api.interceptors.response.use(
     (res) => res,
-    (err) => {
-        if (err.response?.status === 401) {
-            localStorage.removeItem("token");
-            localStorage.removeItem("user");
-            window.location.href = "/login";
+    async (err) => {
+        const status: number | undefined = err.response?.status;
+
+        // 401 — token expirado o inválido (NO en flujo de change-password, que usa 400)
+        // 403 — cuenta desactivada en el servidor
+        // Excluir /auth/login: ahí el 401/403 es una respuesta esperada del negocio
+        // (password incorrecta, cuenta desactivada en el momento del intento de login).
+        // LoginView maneja esos códigos directamente en su bloque catch.
+        const requestUrl = err.config?.url ?? "";
+        if ((status === 401 || status === 403) && !requestUrl.includes("/auth/login")) {
+            // Importación lazy para evitar ciclo: api.ts ← router ← api.ts
+            const { useAuthStore } = await import("../stores/auth");
+            const { default: router } = await import("../router/index");
+
+            const auth = useAuthStore();
+            const msg =
+                status === 403
+                    ? "Tu cuenta fue desactivada. Comunícate con el área de tecnologías de la información."
+                    : "";
+
+            // logout limpia estado y localStorage
+            auth.logout();
+            if (msg) auth.loginBanner = msg;
+
+            // Usar router.push en vez de window.location.href para no romper
+            // el estado de Vue entre el flujo de cambio de contraseña y login.
+            await router.push({ path: "/login" });
         }
+
         return Promise.reject(err);
     }
 );

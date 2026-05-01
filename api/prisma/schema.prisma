@@ -50,6 +50,13 @@ model User {
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
+  // Campos de seguridad y control de acceso
+  active              Boolean   @default(true)
+  failedAttempts      Int       @default(0)
+  lockedAt            DateTime?
+  mustChangePassword  Boolean   @default(false)
+  deactivatedReason   String?   // Valores: "INTENTOS_FALLIDOS" | "BAJA_PERSONAL" | "MANUAL"
+
   triagesAsNurse    TriageRecord[] @relation("NurseTriage")
   notesAsDoctor     MedicalNote[]  @relation("DoctorNote")
   paymentsAsCashier Payment[]      @relation("CashierPayment")

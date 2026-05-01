@@ -1,8 +1,17 @@
 <script setup lang="ts">
-import { ref } from "vue";
+import { ref, onMounted } from "vue";
 import { useAuthStore } from "../stores/auth";
 import { useRouter } from "vue-router";
 import { primeSpeech } from "../services/speechAlert";
+import { homeByRole } from "../utils/roleHome";
+import type { AxiosError } from "axios";
+
+// Tipado de la respuesta 401 del backend
+interface LoginErrorBody {
+  error?: string;
+  attemptsRemaining?: number;
+  maxAttempts?: number;
+}
 
 const auth = useAuthStore();
 const router = useRouter();
@@ -11,32 +20,62 @@ const email = ref("");
 const password = ref("");
 const loading = ref(false);
 const errorMsg = ref("");
+// Intentos restantes que devuelve el backend en la respuesta 401
+const attemptsRemaining = ref<number | null>(null);
 
-function homeByRole(role?: string) {
-  switch (role) {
-    case "NURSE_TRIAGE": return "/triage";
-    case "CASHIER": return "/cashier";
-    case "DOCTOR": return "/doctor";
-    case "ADMIN": return "/admin/reports";
-    case "CONSULTOR": return "/admin/reports";
-    default: return "/login";
+// Banner de cuenta desactivada que puede llegar desde el evento socket auth:disabled
+// o desde el interceptor 403 del api. Se consume aquí y se limpia para no persistir.
+const banner = ref("");
+
+onMounted(() => {
+  if (auth.loginBanner) {
+    banner.value = auth.loginBanner;
+    auth.loginBanner = "";
   }
-}
+});
 
 async function submit() {
   errorMsg.value = "";
+  attemptsRemaining.value = null;
+  banner.value = "";
   loading.value = true;
   // Pre-calienta el motor TTS aprovechando el user gesture del click.
   // Sin esto, el primer "Nuevo paciente en espera" tarda 300-1000ms en sonar.
   primeSpeech();
   try {
     await auth.login(email.value, password.value);
+    // El guard del router se encarga del fork: si mustChangePassword=true irá a
+    // /cambiar-password aunque aquí empujemos al home del rol.
     router.push(homeByRole(auth.user?.role));
-  } catch {
-    errorMsg.value = "Credenciales incorrectas. Verifica tu usuario y contrasena.";
+  } catch (err) {
+    const axErr = err as AxiosError<LoginErrorBody>;
+    const status = axErr.response?.status;
+    const body = axErr.response?.data;
+
+    if (status === 404) {
+      errorMsg.value = "El usuario ingresado no existe";
+    } else if (status === 401) {
+      errorMsg.value = body?.error ?? "La contraseña ingresada es incorrecta";
+      // Mostrar contador si el backend lo incluye y quedan intentos
+      if (typeof body?.attemptsRemaining === "number" && body.attemptsRemaining > 0) {
+        attemptsRemaining.value = body.attemptsRemaining;
+      }
+    } else if (status === 403) {
+      errorMsg.value =
+        "Usuario desactivado, comunícate con el área de tecnologías de la información";
+    } else if (body?.error) {
+      errorMsg.value = body.error;
+    } else {
+      errorMsg.value = "Ocurrió un error inesperado. Intenta de nuevo.";
+    }
   } finally {
     loading.value = false;
   }
+}
+
+// Limpiar el contador cuando el usuario modifica la contraseña
+function onPasswordInput() {
+  attemptsRemaining.value = null;
 }
 </script>
 
@@ -63,9 +102,35 @@ async function submit() {
         <h2 class="login-card-heading">Iniciar sesion</h2>
         <p class="login-card-sub">Ingresa tus credenciales para continuar</p>
 
-        <!-- Error -->
+        <!-- Banner de cuenta desactivada (viene de evento socket o cierre por admin) -->
+        <div
+          v-if="banner"
+          class="mb-4 rounded-lg bg-amber-50 border border-amber-300 px-4 py-3 text-sm text-amber-800 flex items-start gap-2"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 mt-0.5 shrink-0 text-amber-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
+          </svg>
+          <span>{{ banner }}</span>
+        </div>
+
+        <!-- Error de login -->
         <div v-if="errorMsg" class="login-error">
           {{ errorMsg }}
+        </div>
+
+        <!-- Contador de intentos restantes (solo en error 401 con intentos > 0) -->
+        <div
+          v-if="attemptsRemaining !== null"
+          class="mb-4 rounded-lg bg-amber-50 border border-amber-300 px-4 py-2.5 text-sm text-amber-800 flex items-center gap-2"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 shrink-0 text-amber-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
+          </svg>
+          <span>
+            Te {{ attemptsRemaining === 1 ? "queda" : "quedan" }}
+            <strong>{{ attemptsRemaining }} {{ attemptsRemaining === 1 ? "intento" : "intentos" }}</strong>
+            antes de que tu cuenta sea bloqueada.
+          </span>
         </div>
 
         <div class="login-fields">
@@ -102,6 +167,7 @@ async function submit() {
                 type="password"
                 class="login-input"
                 placeholder="••••••••"
+                @input="onPasswordInput"
                 @keyup.enter="submit"
               />
             </div>

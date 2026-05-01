@@ -12,7 +12,10 @@ const router = useRouter();
 const route = useRoute();
 const { connect, disconnect } = useSocket();
 
-const isLogin = computed(() => route.path === "/login");
+// Rutas que se renderizan sin navbar (pantalla limpia)
+const isLogin = computed(
+  () => route.path === "/login" || route.path === "/cambiar-password"
+);
 
 const ROLE_LABEL: Record<string, string> = {
   NURSE_TRIAGE: "Enfermería",

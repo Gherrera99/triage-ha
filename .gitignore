@@ -26,6 +26,10 @@ build/
 # Semilla de base de datos (puede contener datos sensibles o de prueba)
 api/prisma/seed.js
 
+# Archivos de carga de usuarios (datos personales del personal del hospital)
+api/listado_usuarios.xlsx
+api/*.xlsx
+
 # Logs
 *.log
 npm-debug.log*
