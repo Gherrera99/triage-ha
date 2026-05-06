@@ -104,6 +104,20 @@ Reemplazar:
 
 ## 4. Levantar los contenedores
 
+En el servidor del hospital se levanta combinando el compose base con el override de produccion:
+
+```powershell
+docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
+```
+
+El override `docker-compose.prod.yml` aplica los siguientes cambios sobre el base:
+
+- Adminer en puerto **8090** en vez de 8080 (en `192.168.1.30` el 8080 lo ocupa otro stack).
+- `api` y `web` SIN bind mounts del codigo fuente (en Windows los bind mounts desde unidades de red mapeadas como `Z:` fallan parcialmente). La imagen ya trae el codigo via `COPY . .` del Dockerfile.
+- `api` ejecuta `prisma migrate deploy` automaticamente al arrancar para aplicar migraciones pendientes.
+
+Para **dev local** en otra maquina (sin el override) se usa el compose base solo:
+
 ```powershell
 docker compose up -d --build
 ```
@@ -251,7 +265,7 @@ Si algo sale mal y necesitas volver a un estado anterior:
    ```powershell
    git log --oneline -5
    git checkout <hash>
-   docker compose up -d --build
+   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
    ```
 4. Notificar a usuarios.
 

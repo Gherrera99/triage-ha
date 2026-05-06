@@ -1,0 +1,36 @@
+# ============================================================
+# docker-compose.prod.yml
+#
+# Overrides para despliegue en produccion. Se aplica EN ADICION
+# al docker-compose.yml base:
+#
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
+#
+# Diferencias respecto al modo dev (docker-compose.yml solo):
+#
+#   - Adminer expuesto en 8090 en lugar de 8080 (en el servidor del
+#     hospital el 8080 lo usa otro stack — sistema-ctrl-patrimonial).
+#
+#   - api/web: SIN bind mounts del codigo fuente. La imagen ya trae
+#     el codigo (COPY . . del Dockerfile). En Windows + unidades de
+#     red mapeadas (como Z:) los bind mounts fallan parcialmente y
+#     los contenedores crashean con ENOENT package.json.
+#
+#   - api: corre `prisma migrate deploy` (idempotente, no interactivo)
+#     antes de levantar, asi al arrancar el stack las migraciones
+#     pendientes se aplican solas.
+#
+# Requiere Docker Compose >= 2.24 (sintaxis !override).
+# ============================================================
+services:
+  adminer:
+    ports: !override
+      - "8090:8080"
+
+  api:
+    volumes: !override []
+    command: sh -c "npx prisma migrate deploy && npx prisma generate && npm run dev"
+
+  web:
+    volumes: !override []
+    command: sh -c "npm run dev -- --host 0.0.0.0 --port 5173"
