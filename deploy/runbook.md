@@ -4,7 +4,7 @@ Este documento describe el despliegue del sistema **triage-ha** en el servidor d
 
 > **Servidor destino:** `192.168.1.30` (Windows 11 Pro)
 > **NAS de backups:** `\\192.168.1.10\informatica25\backups\triage`
-> **Acceso final del usuario:** `http://192.168.1.30:<PUERTO_WEB>` (puerto a confirmar tras chequeo)
+> **Acceso final del usuario:** `https://192.168.1.30:<PUERTO_WEB>` (puerto a confirmar tras chequeo)
 
 ---
 
@@ -12,6 +12,7 @@ Este documento describe el despliegue del sistema **triage-ha** en el servidor d
 
 - [ ] **Docker Desktop** instalado y corriendo en el servidor (con WSL2 backend habilitado).
 - [ ] **Git** instalado.
+- [ ] **mkcert** instalado en el servidor (para HTTPS). `choco install mkcert` o binario manual de https://github.com/FiloSottile/mkcert/releases.
 - [ ] El usuario que ejecuta los pasos es Administrador de Windows.
 - [ ] El servidor tiene conectividad a `\\192.168.1.10\informatica25` (probar con `Test-Path`).
 - [ ] Archivo `LISTADO USUARIOS SISTEMA TRIAGE 2026.xlsx` disponible en una ruta del servidor (NO se commitea al repo).
@@ -95,10 +96,29 @@ notepad web\.env
 ```
 
 Reemplazar:
-- `VITE_API_URL=http://192.168.1.30:3000`
-- `VITE_WS_URL=http://192.168.1.30:3000`
+- `VITE_API_URL=https://192.168.1.30:3000`
+- `VITE_WS_URL=https://192.168.1.30:3000`
 
-(ajustar puertos si cambiaron).
+(ajustar puertos si cambiaron). Los esquemas son `https://` porque el sistema corre con TLS — ver paso 3.4.
+
+### 3.4 Generar certificados TLS (mkcert)
+
+Generar el certificado del servidor + el CA raíz que se va a redistribuir a las PCs cliente:
+
+```powershell
+.\deploy\generate-certs.ps1
+```
+
+Esto crea `C:\triage-certs\` con:
+- `server.crt` + `server.key` — los presenta el server al navegador.
+- `rootCA.pem` — el CA raíz, se copia a cada PC cliente en el paso 9.
+
+El `.env` raíz ya debe tener (viene en `root.env.production.example`):
+```
+CERTS_HOST_PATH=C:/triage-certs
+```
+
+Ver `deploy\HTTPS.md` para el detalle conceptual.
 
 ---
 
@@ -177,7 +197,7 @@ Debe mostrar: 4 ADMIN, 11 CASHIER, 8 CONSULTOR, 20 DOCTOR, 30 NURSE_TRIAGE = 73 
 Probar el flujo crítico antes de dar acceso a usuarios:
 
 1. **Login admin** desde otra PC en la LAN del hospital:
-   - Abrir `http://192.168.1.30:5173`
+   - Abrir `https://192.168.1.30:5173` (debe tener instalado el cert raíz, ver paso 9 — para el smoke inicial alcanza con aceptar la advertencia "Avanzado > Continuar").
    - Login con un admin del Excel y su pwd `primernombre2026*`
    - Debe redirigir a `/cambiar-password` (porque `mustChangePassword=true`)
    - Cambiar la pwd a una válida → debe entrar al dashboard
@@ -185,7 +205,7 @@ Probar el flujo crítico antes de dar acceso a usuarios:
 3. **Cobrar** desde la vista de caja (con un usuario CASHIER).
 4. **Tomar consulta y finalizar** desde la vista de médico (con un usuario DOCTOR).
 5. **Generar el reporte de turno (PDF)** desde la vista de enfermería para validar logos y formato.
-6. **Borrar el paciente de prueba** (Adminer en `http://192.168.1.30:8080` → tabla `Patient`).
+6. **Borrar el paciente de prueba** (Adminer en `http://192.168.1.30:8090` → tabla `Patient`). Adminer queda en HTTP plano y solo se accede desde el servidor mismo o por TI.
 
 ---
 
@@ -209,7 +229,26 @@ cmdkey /add:192.168.1.10 /user:Administrador /pass
 
 ---
 
-## 9. Entrega de credenciales
+## 9. Entrega de credenciales y certificado a las PCs
+
+### 9.1 Instalar el certificado raíz en cada PC cliente
+
+Para que Chrome / Edge no marquen el sistema como "No seguro", cada PC del hospital debe confiar en el CA raíz generado en el paso 3.4. Esto se hace **una sola vez por PC**.
+
+1. Preparar un USB / carpeta compartida con dos archivos:
+   - `C:\triage-certs\rootCA.pem` (del servidor).
+   - `deploy\instalar-certificado-cliente.bat` (del repo).
+2. En cada PC del hospital (enfermería, caja, médico, admin):
+   - Copiar AMBOS archivos a la misma carpeta local (ej. `C:\Temp\triage-cert\`).
+   - Clic DERECHO sobre `instalar-certificado-cliente.bat` → **Ejecutar como administrador**.
+   - Aceptar el UAC. El script imprime "LISTO" si terminó bien.
+   - Cerrar y reabrir Chrome / Edge.
+   - Verificar entrando a `https://192.168.1.30:5173` — debe mostrar candado, sin advertencia.
+3. Borrar la carpeta local (ya no se necesita).
+
+Ver `deploy\HTTPS.md` para detalles y troubleshooting.
+
+### 9.2 Entrega de credenciales
 
 1. Generar el listado de los 73 usuarios con pwd inicial:
    ```powershell

@@ -16,6 +16,16 @@
 #     red mapeadas (como Z:) los bind mounts fallan parcialmente y
 #     los contenedores crashean con ENOENT package.json.
 #
+#   - api/web: montan ${CERTS_HOST_PATH:-./certs} en /certs como
+#     READ-ONLY para servir HTTPS. Variables TLS_CERT_PATH/TLS_KEY_PATH
+#     activan el modo HTTPS en server.ts y vite.config.ts.
+#
+#     IMPORTANTE: si el repo vive en una unidad de red mapeada (Z:),
+#     el bind mount de certs tambien fallara. En ese caso copiar los
+#     certificados a una carpeta LOCAL del servidor (ej. C:\triage-certs)
+#     y exportar CERTS_HOST_PATH=C:/triage-certs antes de levantar el
+#     stack, o ponerlo en el .env raiz.
+#
 #   - api: corre `prisma migrate deploy` (idempotente, no interactivo)
 #     antes de levantar, asi al arrancar el stack las migraciones
 #     pendientes se aplican solas.
@@ -28,9 +38,17 @@ services:
       - "8090:8080"
 
   api:
-    volumes: !override []
+    volumes: !override
+      - ${CERTS_HOST_PATH:-./certs}:/certs:ro
+    environment:
+      TLS_CERT_PATH: /certs/server.crt
+      TLS_KEY_PATH: /certs/server.key
     command: sh -c "npx prisma migrate deploy && npx prisma generate && npm run dev"
 
   web:
-    volumes: !override []
+    volumes: !override
+      - ${CERTS_HOST_PATH:-./certs}:/certs:ro
+    environment:
+      TLS_CERT_PATH: /certs/server.crt
+      TLS_KEY_PATH: /certs/server.key
     command: sh -c "npm run dev -- --host 0.0.0.0 --port 5173"

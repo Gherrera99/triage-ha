@@ -44,3 +44,9 @@ pnpm-debug.log*
 # OS
 .DS_Store
 Thumbs.db
+
+# Certificados TLS — generados localmente con mkcert.
+# NUNCA subir certificados ni claves privadas al repo.
+certs/
+**/certs/
+!deploy/certs-readme.md

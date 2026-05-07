@@ -25,7 +25,10 @@ export function initSocket(server: HttpServer) {
             origin: (origin, cb) => {
                 if (!origin) return cb(null, true);
                 if (allowlist.includes(origin)) return cb(null, true);
-                if (/^http:\/\/192\.168\.\d+\.\d+:5173$/.test(origin)) return cb(null, true);
+                // LAN del hospital (http o https)
+                if (/^https?:\/\/192\.168\.\d+\.\d+:5173$/.test(origin)) return cb(null, true);
+                // Tailscale CGNAT range 100.64.0.0/10 (acceso remoto del equipo de TI)
+                if (/^https?:\/\/100\.(6[4-9]|[7-9]\d|1[01]\d|12[0-7])\.\d+\.\d+:5173$/.test(origin)) return cb(null, true);
                 return cb(new Error(`CORS Socket bloqueado para: ${origin}`));
             },
             credentials: true,

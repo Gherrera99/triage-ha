@@ -1,5 +1,7 @@
 import express, { NextFunction, Request, Response } from "express";
 import http from "http";
+import https from "https";
+import fs from "fs";
 import cors from "cors";
 import dotenv from "dotenv";
 import { initSocket } from "./socket";
@@ -31,8 +33,11 @@ const corsOptions: cors.CorsOptions = {
         // allowlist exacta
         if (allowlist.includes(origin)) return cb(null, true);
 
-        // DEV: permite cualquier IP LAN (Vite 5173)
-        if (/^http:\/\/192\.168\.\d+\.\d+:5173$/.test(origin)) return cb(null, true);
+        // DEV: permite cualquier IP LAN (Vite 5173) en http o https
+        if (/^https?:\/\/192\.168\.\d+\.\d+:5173$/.test(origin)) return cb(null, true);
+
+        // Tailscale CGNAT range 100.64.0.0/10 (acceso remoto del equipo de TI)
+        if (/^https?:\/\/100\.(6[4-9]|[7-9]\d|1[01]\d|12[0-7])\.\d+\.\d+:5173$/.test(origin)) return cb(null, true);
 
         return cb(new Error(`CORS bloqueado para: ${origin}`));
     },
@@ -63,8 +68,29 @@ app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
     res.status(status).json({ error: err?.message || "Error interno del servidor" });
 });
 
-const server = http.createServer(app);
+// HTTPS opcional: si TLS_CERT_PATH y TLS_KEY_PATH apuntan a archivos
+// existentes, el server arranca en HTTPS. Si no, queda en HTTP plano
+// (modo dev local sin certificados).
+const TLS_CERT_PATH = process.env.TLS_CERT_PATH;
+const TLS_KEY_PATH = process.env.TLS_KEY_PATH;
+const tlsEnabled =
+    !!TLS_CERT_PATH &&
+    !!TLS_KEY_PATH &&
+    fs.existsSync(TLS_CERT_PATH) &&
+    fs.existsSync(TLS_KEY_PATH);
+
+const server = tlsEnabled
+    ? https.createServer(
+          {
+              cert: fs.readFileSync(TLS_CERT_PATH!),
+              key: fs.readFileSync(TLS_KEY_PATH!),
+          },
+          app
+      )
+    : http.createServer(app);
+
 initSocket(server);
 
 const PORT = Number(process.env.PORT || 3000);
-server.listen(PORT, () => console.log(`API on http://localhost:${PORT}`));
+const proto = tlsEnabled ? "https" : "http";
+server.listen(PORT, () => console.log(`API on ${proto}://localhost:${PORT}`));

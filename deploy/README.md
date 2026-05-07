@@ -7,10 +7,13 @@ Esta carpeta contiene scripts y plantillas para desplegar `triage-ha` en el serv
 | Archivo | Para qué sirve | Cuándo se usa |
 |---|---|---|
 | `runbook.md` | Pasos paso a paso del despliegue | Día del go-live |
+| `HTTPS.md` | Cómo funciona el HTTPS via mkcert + troubleshooting | Lectura previa |
 | `port-check.ps1` | Detecta puertos ocupados antes de levantar el stack | Antes del despliegue |
-| `root.env.production.example` | Plantilla del `.env` raíz (passwords MySQL) | Una vez, al instalar |
+| `root.env.production.example` | Plantilla del `.env` raíz (passwords MySQL + CERTS_HOST_PATH) | Una vez, al instalar |
 | `api.env.production.example` | Plantilla de `api/.env` (JWT_SECRET, DATABASE_URL, CORS) | Una vez, al instalar |
 | `web.env.production.example` | Plantilla de `web/.env` (URLs API/WS) | Una vez, al instalar |
+| `generate-certs.ps1` | Genera `server.crt`/`server.key`/`rootCA.pem` con mkcert | Una vez al instalar; al renovar (~2 años) |
+| `instalar-certificado-cliente.bat` | Instala `rootCA.pem` en una PC cliente Windows | Una vez por PC del hospital |
 | `backup.ps1` | Backup diario de MySQL a la NAS | Lo dispara la tarea programada |
 | `setup-backup-task.ps1` | Registra la tarea programada en Task Scheduler | Una vez, después de instalar |
 | `restore.ps1` | Restaura la BD desde un backup `.sql.gz` | Solo en emergencia |
