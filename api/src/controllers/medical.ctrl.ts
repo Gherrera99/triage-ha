@@ -127,6 +127,13 @@ export async function upsertNote(req: Request, res: Response) {
     // ✅ contrarreferencia "texto legacy" (para no romper reportes viejos)
     const followUp = !!data.contraRefFollowUp;
     const when = typeof data.contraRefWhen === "string" ? data.contraRefWhen.trim() : "";
+
+    if (followUp && !when) {
+        return res.status(400).json({
+            error: "Debe especificar el plazo de la contrarreferencia cuando se marca el seguimiento",
+        });
+    }
+
     const contraLegacy = followUp ? (when ? `SI - ${when}` : "SI") : "NO";
 
     // ✅ vigilanciaTexto (nuevo); si llega el campo viejo, lo convierte a texto

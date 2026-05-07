@@ -7,6 +7,17 @@ import { startAlertLoop, stopAlertLoop } from "../services/speechAlert";
 type Row = any;
 type Tab = "WAITING" | "CONSULTING" | "ATTENDED" | "CANCELLED";
 
+// YYYY-MM-DD en zona Mérida (America/Merida, UTC-06:00)
+function todayMerida(): string {
+    const parts = new Intl.DateTimeFormat("en-CA", {
+        timeZone: "America/Merida",
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+    }).format(new Date());
+    return parts; // "en-CA" produce YYYY-MM-DD
+}
+
 const emptyNote = () => ({
     padecimientoActual: "",
     antecedentes: "",
@@ -43,6 +54,15 @@ export const useDoctorStore = defineStore("doctor", {
         consulting: [] as Row[],
         attended: [] as Row[],
         cancelled: [] as Row[],
+
+        // Filtros y paginación de "Atendidos" (lista histórica persistente)
+        attendedQuery: "",
+        attendedDateFrom: todayMerida(),
+        attendedDateTo: todayMerida(),
+        attendedPage: 1,
+        attendedPageSize: 20,
+        attendedTotal: 0,
+        attendedLoading: false,
 
         selected: null as Row | null,
         detail: null as Row | null,
@@ -138,8 +158,43 @@ export const useDoctorStore = defineStore("doctor", {
             this.consulting = (data ?? []).filter((r: any) => this.isWithin24h(r.triageAt));
         },
         async fetchAttended() {
-            const { data } = await api.get("/triage/doctor/attended");
-            this.attended = (data ?? []).filter((r: any) => this.isWithin24h(r.triageAt));
+            this.attendedLoading = true;
+            try {
+                const params: Record<string, any> = {
+                    page: this.attendedPage,
+                    pageSize: this.attendedPageSize,
+                };
+                if (this.attendedQuery.trim()) params.q = this.attendedQuery.trim();
+                if (this.attendedDateFrom) params.dateFrom = this.attendedDateFrom;
+                if (this.attendedDateTo) params.dateTo = this.attendedDateTo;
+
+                const { data } = await api.get("/triage/doctor/attended", { params });
+                this.attended = data?.rows ?? [];
+                this.attendedTotal = data?.total ?? 0;
+            } finally {
+                this.attendedLoading = false;
+            }
+        },
+
+        setAttendedPage(p: number) {
+            const max = Math.max(1, Math.ceil(this.attendedTotal / this.attendedPageSize));
+            const next = Math.min(Math.max(1, p), max);
+            if (next === this.attendedPage) return;
+            this.attendedPage = next;
+            this.fetchAttended();
+        },
+
+        applyAttendedFilters() {
+            this.attendedPage = 1;
+            this.fetchAttended();
+        },
+
+        resetAttendedFilters() {
+            this.attendedQuery = "";
+            this.attendedDateFrom = todayMerida();
+            this.attendedDateTo = todayMerida();
+            this.attendedPage = 1;
+            this.fetchAttended();
         },
         async fetchCancelled() {
             const { data } = await api.get("/triage/doctor/cancelled");

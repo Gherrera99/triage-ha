@@ -187,9 +187,82 @@ function fmtMerida(iso: string) {
   }).format(d);
 }
 
+function hasMax3Decimals(v: number | null): boolean {
+  if (v === null || v === undefined || Number.isNaN(v)) return false;
+  if (!Number.isFinite(v)) return false;
+  return Math.abs(v - Math.round(v * 1000) / 1000) < 1e-9;
+}
+
+// ====== Validacion inline (bordes rojos + mensaje debajo) ======
+const formErrors = reactive<Record<string, string>>({});
+
+function clearFormErrors() {
+  for (const k of Object.keys(formErrors)) delete formErrors[k];
+}
+
+function fieldErrClass(field: string) {
+  return formErrors[field] ? "ring-2 ring-red-400 border-red-400 bg-red-50" : "";
+}
+
+function scrollToFirstError() {
+  const first = Object.keys(formErrors)[0];
+  if (!first) return;
+  const el = document.getElementById(`triage-field-${first}`);
+  if (el) {
+    el.scrollIntoView({ behavior: "smooth", block: "center" });
+    (el.querySelector("input,select,textarea") as HTMLElement | null)?.focus();
+  }
+}
+
+// Auto-limpia el error de un campo cuando el usuario lo modifica
+watch(() => form.birthDate, () => delete formErrors.birthDate);
+watch(() => form.responsibleName, () => delete formErrors.responsibleName);
+watch(() => form.patientFullName, () => delete formErrors.patientFullName);
+watch(() => form.motivoUrgencia, () => delete formErrors.motivoUrgencia);
+watch(() => form.weightKg, () => delete formErrors.weightKg);
+watch(() => form.heightCm, () => delete formErrors.heightCm);
+watch(() => form.temperatureC, () => delete formErrors.temperatureC);
+watch(() => form.heartRate, () => delete formErrors.heartRate);
+watch(() => form.respiratoryRate, () => delete formErrors.respiratoryRate);
+watch(() => form.bloodPressure, () => delete formErrors.bloodPressure);
+watch(() => form.priorCarePlace, () => delete formErrors.priorCarePlace);
+watch(() => form.referralPlace, () => delete formErrors.referralPlace);
+
 async function saveNew() {
-  if (!form.motivoUrgencia.trim() || !form.patientFullName.trim()) {
-    return alert("Motivo de urgencia y Nombre completo son requeridos");
+  clearFormErrors();
+  if (!form.motivoUrgencia.trim()) formErrors.motivoUrgencia = "Obligatorio";
+  if (!form.patientFullName.trim()) formErrors.patientFullName = "Obligatorio";
+  if (!form.birthDate) formErrors.birthDate = "Fecha de nacimiento obligatoria";
+  if (!form.responsibleName.trim()) formErrors.responsibleName = "Nombre del responsable obligatorio";
+
+  if (isConsulta.value) {
+    const numericChecks: Array<[string, number | null]> = [
+      ["weightKg", form.weightKg],
+      ["heightCm", form.heightCm],
+      ["temperatureC", form.temperatureC],
+      ["heartRate", form.heartRate],
+      ["respiratoryRate", form.respiratoryRate],
+    ];
+    for (const [field, val] of numericChecks) {
+      if (val === null || val === undefined || Number.isNaN(val as any)) {
+        formErrors[field] = "Obligatorio";
+      } else if (!hasMax3Decimals(val)) {
+        formErrors[field] = "Máximo 3 decimales";
+      }
+    }
+    if (!form.bloodPressure.trim()) formErrors.bloodPressure = "Obligatoria";
+
+    if (form.hadPriorCareSamePathology && !form.priorCarePlace.trim()) {
+      formErrors.priorCarePlace = "Especificar el lugar";
+    }
+    if (form.hasReferral && !form.referralPlace.trim()) {
+      formErrors.referralPlace = "Especificar el lugar";
+    }
+  }
+
+  if (Object.keys(formErrors).length) {
+    setTimeout(scrollToFirstError, 50);
+    return;
   }
 
   const payload = {
@@ -334,7 +407,40 @@ function openRevalue(row: NurseTriageRow) {
   showRevalue.value = true;
 }
 
+const reErrors = reactive<Record<string, string>>({});
+function reErrClass(field: string) {
+  return reErrors[field] ? "ring-2 ring-red-400 border-red-400 bg-red-50" : "";
+}
+watch(() => re.weightKg, () => delete reErrors.weightKg);
+watch(() => re.heightCm, () => delete reErrors.heightCm);
+watch(() => re.temperatureC, () => delete reErrors.temperatureC);
+watch(() => re.heartRate, () => delete reErrors.heartRate);
+watch(() => re.respiratoryRate, () => delete reErrors.respiratoryRate);
+watch(() => re.priorCarePlace, () => delete reErrors.priorCarePlace);
+watch(() => re.referralPlace, () => delete reErrors.referralPlace);
+
 async function submitRevalue() {
+  for (const k of Object.keys(reErrors)) delete reErrors[k];
+  const checks: Array<[string, number | null]> = [
+    ["weightKg", re.weightKg],
+    ["heightCm", re.heightCm],
+    ["temperatureC", re.temperatureC],
+    ["heartRate", re.heartRate],
+    ["respiratoryRate", re.respiratoryRate],
+  ];
+  for (const [field, val] of checks) {
+    if (val !== null && val !== undefined && !Number.isNaN(val as any) && !hasMax3Decimals(val)) {
+      reErrors[field] = "Máximo 3 decimales";
+    }
+  }
+  if (re.hadPriorCareSamePathology && !re.priorCarePlace.trim()) {
+    reErrors.priorCarePlace = "Especificar el lugar";
+  }
+  if (re.hasReferral && !re.referralPlace.trim()) {
+    reErrors.referralPlace = "Especificar el lugar";
+  }
+  if (Object.keys(reErrors).length) return;
+
   try {
     await s.revalue(re.id, {
       appearance: re.appearance,
@@ -446,22 +552,25 @@ onBeforeUnmount(() => {
             <input v-model="form.expediente" class="input-base" placeholder="SIN EXPEDIENTE" />
           </div>
 
-          <div>
+          <div id="triage-field-motivoUrgencia">
             <label class="block text-sm font-medium text-gray-700 mb-1.5">Motivo de urgencia <span class="text-red-500">*</span></label>
-            <select v-model="form.motivoUrgencia" class="input-base">
+            <select v-model="form.motivoUrgencia" :class="['input-base', fieldErrClass('motivoUrgencia')]">
               <option v-for="m in MOTIVOS" :key="m" :value="m">{{ m }}</option>
             </select>
+            <p v-if="formErrors.motivoUrgencia" class="text-xs text-red-600 mt-1">{{ formErrors.motivoUrgencia }}</p>
           </div>
 
-          <div class="col-span-2">
+          <div class="col-span-2" id="triage-field-patientFullName">
             <label class="block text-sm font-medium text-gray-700 mb-1.5">Nombre completo <span class="text-red-500">*</span></label>
-            <input v-model="form.patientFullName" class="input-base" placeholder="Nombre y apellidos del paciente" />
+            <input v-model="form.patientFullName" :class="['input-base', fieldErrClass('patientFullName')]" placeholder="Nombre y apellidos del paciente" />
+            <p v-if="formErrors.patientFullName" class="text-xs text-red-600 mt-1">{{ formErrors.patientFullName }}</p>
           </div>
 
           <div class="grid grid-cols-2 gap-3">
-            <div>
-              <label class="block text-sm font-medium text-gray-700 mb-1.5">Fecha de nacimiento</label>
-              <input v-model="form.birthDate" type="date" class="input-base" />
+            <div id="triage-field-birthDate">
+              <label class="block text-sm font-medium text-gray-700 mb-1.5">Fecha de nacimiento <span class="text-red-500">*</span></label>
+              <input v-model="form.birthDate" type="date" :class="['input-base', fieldErrClass('birthDate')]" />
+              <p v-if="formErrors.birthDate" class="text-xs text-red-600 mt-1">{{ formErrors.birthDate }}</p>
             </div>
             <div>
               <label class="block text-sm font-medium text-gray-700 mb-1.5">Edad calculada</label>
@@ -477,9 +586,10 @@ onBeforeUnmount(() => {
             </select>
           </div>
 
-          <div>
-            <label class="block text-sm font-medium text-gray-700 mb-1.5">Nombre del responsable</label>
-            <input v-model="form.responsibleName" class="input-base" placeholder="Nombre del tutor o responsable" />
+          <div id="triage-field-responsibleName">
+            <label class="block text-sm font-medium text-gray-700 mb-1.5">Nombre del responsable <span class="text-red-500">*</span></label>
+            <input v-model="form.responsibleName" :class="['input-base', fieldErrClass('responsibleName')]" placeholder="Nombre del tutor o responsable" />
+            <p v-if="formErrors.responsibleName" class="text-xs text-red-600 mt-1">{{ formErrors.responsibleName }}</p>
           </div>
 
           <div class="col-span-2">
@@ -527,29 +637,35 @@ onBeforeUnmount(() => {
         <div class="card p-6 mb-4">
           <p class="section-label">Signos vitales</p>
           <div class="grid grid-cols-3 gap-4">
-            <div>
-              <label class="block text-sm font-medium text-gray-700 mb-1.5">Peso (kg)</label>
-              <input v-model.number="form.weightKg" type="number" step="0.01" class="input-base" placeholder="0.0" />
+            <div id="triage-field-weightKg">
+              <label class="block text-sm font-medium text-gray-700 mb-1.5">Peso (kg) <span class="text-red-500">*</span></label>
+              <input v-model.number="form.weightKg" type="number" step="0.001" min="0" :class="['input-base', fieldErrClass('weightKg')]" placeholder="0.000" />
+              <p v-if="formErrors.weightKg" class="text-xs text-red-600 mt-1">{{ formErrors.weightKg }}</p>
             </div>
-            <div>
-              <label class="block text-sm font-medium text-gray-700 mb-1.5">Talla (cm)</label>
-              <input v-model.number="form.heightCm" type="number" step="0.01" class="input-base" placeholder="0" />
+            <div id="triage-field-heightCm">
+              <label class="block text-sm font-medium text-gray-700 mb-1.5">Talla (cm) <span class="text-red-500">*</span></label>
+              <input v-model.number="form.heightCm" type="number" step="0.001" min="0" :class="['input-base', fieldErrClass('heightCm')]" placeholder="0.000" />
+              <p v-if="formErrors.heightCm" class="text-xs text-red-600 mt-1">{{ formErrors.heightCm }}</p>
             </div>
-            <div>
-              <label class="block text-sm font-medium text-gray-700 mb-1.5">Temperatura (°C)</label>
-              <input v-model.number="form.temperatureC" type="number" step="0.1" class="input-base" placeholder="36.5" />
+            <div id="triage-field-temperatureC">
+              <label class="block text-sm font-medium text-gray-700 mb-1.5">Temperatura (°C) <span class="text-red-500">*</span></label>
+              <input v-model.number="form.temperatureC" type="number" step="0.001" min="0" :class="['input-base', fieldErrClass('temperatureC')]" placeholder="36.500" />
+              <p v-if="formErrors.temperatureC" class="text-xs text-red-600 mt-1">{{ formErrors.temperatureC }}</p>
             </div>
-            <div>
-              <label class="block text-sm font-medium text-gray-700 mb-1.5">Frec. Cardíaca</label>
-              <input v-model.number="form.heartRate" type="number" class="input-base" placeholder="lpm" />
+            <div id="triage-field-heartRate">
+              <label class="block text-sm font-medium text-gray-700 mb-1.5">Frec. Cardíaca <span class="text-red-500">*</span></label>
+              <input v-model.number="form.heartRate" type="number" step="0.001" min="0" :class="['input-base', fieldErrClass('heartRate')]" placeholder="lpm" />
+              <p v-if="formErrors.heartRate" class="text-xs text-red-600 mt-1">{{ formErrors.heartRate }}</p>
             </div>
-            <div>
-              <label class="block text-sm font-medium text-gray-700 mb-1.5">Frec. Respiratoria</label>
-              <input v-model.number="form.respiratoryRate" type="number" class="input-base" placeholder="rpm" />
+            <div id="triage-field-respiratoryRate">
+              <label class="block text-sm font-medium text-gray-700 mb-1.5">Frec. Respiratoria <span class="text-red-500">*</span></label>
+              <input v-model.number="form.respiratoryRate" type="number" step="0.001" min="0" :class="['input-base', fieldErrClass('respiratoryRate')]" placeholder="rpm" />
+              <p v-if="formErrors.respiratoryRate" class="text-xs text-red-600 mt-1">{{ formErrors.respiratoryRate }}</p>
             </div>
-            <div>
-              <label class="block text-sm font-medium text-gray-700 mb-1.5">T.A.</label>
-              <input v-model="form.bloodPressure" class="input-base" placeholder="120/80" />
+            <div id="triage-field-bloodPressure">
+              <label class="block text-sm font-medium text-gray-700 mb-1.5">T.A. <span class="text-red-500">*</span></label>
+              <input v-model="form.bloodPressure" :class="['input-base', fieldErrClass('bloodPressure')]" placeholder="120/80" />
+              <p v-if="formErrors.bloodPressure" class="text-xs text-red-600 mt-1">{{ formErrors.bloodPressure }}</p>
             </div>
           </div>
         </div>
@@ -566,12 +682,14 @@ onBeforeUnmount(() => {
               <input type="checkbox" v-model="form.hadPriorCareSamePathology" class="sr-only" />
               <span class="text-sm text-gray-700">Atención previa misma patología</span>
             </label>
-            <input
-                v-if="form.hadPriorCareSamePathology"
-                v-model="form.priorCarePlace"
-                class="input-base"
-                placeholder="Lugar de atención previa"
-            />
+            <div v-if="form.hadPriorCareSamePathology" id="triage-field-priorCarePlace">
+              <input
+                  v-model="form.priorCarePlace"
+                  :class="['input-base', fieldErrClass('priorCarePlace')]"
+                  placeholder="Lugar de atención previa *"
+              />
+              <p v-if="formErrors.priorCarePlace" class="text-xs text-red-600 mt-1">{{ formErrors.priorCarePlace }}</p>
+            </div>
           </div>
 
           <div class="card p-5">
@@ -585,12 +703,14 @@ onBeforeUnmount(() => {
               <input type="checkbox" v-model="form.hasReferral" class="sr-only" />
               <span class="text-sm text-gray-700">Paciente con referencia</span>
             </label>
-            <input
-                v-if="form.hasReferral"
-                v-model="form.referralPlace"
-                class="input-base"
-                placeholder="Lugar de referencia"
-            />
+            <div v-if="form.hasReferral" id="triage-field-referralPlace">
+              <input
+                  v-model="form.referralPlace"
+                  :class="['input-base', fieldErrClass('referralPlace')]"
+                  placeholder="Lugar de referencia *"
+              />
+              <p v-if="formErrors.referralPlace" class="text-xs text-red-600 mt-1">{{ formErrors.referralPlace }}</p>
+            </div>
           </div>
         </div>
       </template>
@@ -742,23 +862,28 @@ onBeforeUnmount(() => {
             <div class="grid grid-cols-3 gap-3">
               <div>
                 <label class="block text-xs font-medium text-gray-600 mb-1">Peso (kg)</label>
-                <input v-model.number="re.weightKg" type="number" step="0.01" class="input-base" placeholder="0.0" />
+                <input v-model.number="re.weightKg" type="number" step="0.001" min="0" :class="['input-base', reErrClass('weightKg')]" placeholder="0.000" />
+                <p v-if="reErrors.weightKg" class="text-xs text-red-600 mt-1">{{ reErrors.weightKg }}</p>
               </div>
               <div>
                 <label class="block text-xs font-medium text-gray-600 mb-1">Talla (cm)</label>
-                <input v-model.number="re.heightCm" type="number" step="0.01" class="input-base" placeholder="0" />
+                <input v-model.number="re.heightCm" type="number" step="0.001" min="0" :class="['input-base', reErrClass('heightCm')]" placeholder="0.000" />
+                <p v-if="reErrors.heightCm" class="text-xs text-red-600 mt-1">{{ reErrors.heightCm }}</p>
               </div>
               <div>
                 <label class="block text-xs font-medium text-gray-600 mb-1">Temp (°C)</label>
-                <input v-model.number="re.temperatureC" type="number" step="0.1" class="input-base" placeholder="36.5" />
+                <input v-model.number="re.temperatureC" type="number" step="0.001" min="0" :class="['input-base', reErrClass('temperatureC')]" placeholder="36.500" />
+                <p v-if="reErrors.temperatureC" class="text-xs text-red-600 mt-1">{{ reErrors.temperatureC }}</p>
               </div>
               <div>
                 <label class="block text-xs font-medium text-gray-600 mb-1">F.C.</label>
-                <input v-model.number="re.heartRate" type="number" class="input-base" placeholder="lpm" />
+                <input v-model.number="re.heartRate" type="number" step="0.001" min="0" :class="['input-base', reErrClass('heartRate')]" placeholder="lpm" />
+                <p v-if="reErrors.heartRate" class="text-xs text-red-600 mt-1">{{ reErrors.heartRate }}</p>
               </div>
               <div>
                 <label class="block text-xs font-medium text-gray-600 mb-1">F.R.</label>
-                <input v-model.number="re.respiratoryRate" type="number" class="input-base" placeholder="rpm" />
+                <input v-model.number="re.respiratoryRate" type="number" step="0.001" min="0" :class="['input-base', reErrClass('respiratoryRate')]" placeholder="rpm" />
+                <p v-if="reErrors.respiratoryRate" class="text-xs text-red-600 mt-1">{{ reErrors.respiratoryRate }}</p>
               </div>
               <div>
                 <label class="block text-xs font-medium text-gray-600 mb-1">T.A.</label>
@@ -774,7 +899,10 @@ onBeforeUnmount(() => {
                 <input type="checkbox" v-model="re.hadPriorCareSamePathology" class="rounded" />
                 Sí, atención previa
               </label>
-              <input v-if="re.hadPriorCareSamePathology" v-model="re.priorCarePlace" class="input-base" placeholder="Lugar" />
+              <div v-if="re.hadPriorCareSamePathology">
+                <input v-model="re.priorCarePlace" :class="['input-base', reErrClass('priorCarePlace')]" placeholder="Lugar *" />
+                <p v-if="reErrors.priorCarePlace" class="text-xs text-red-600 mt-1">{{ reErrors.priorCarePlace }}</p>
+              </div>
             </div>
             <div class="card p-4">
               <p class="section-label">Referencia</p>
@@ -782,7 +910,10 @@ onBeforeUnmount(() => {
                 <input type="checkbox" v-model="re.hasReferral" class="rounded" />
                 Viene referido
               </label>
-              <input v-if="re.hasReferral" v-model="re.referralPlace" class="input-base" placeholder="Lugar" />
+              <div v-if="re.hasReferral">
+                <input v-model="re.referralPlace" :class="['input-base', reErrClass('referralPlace')]" placeholder="Lugar *" />
+                <p v-if="reErrors.referralPlace" class="text-xs text-red-600 mt-1">{{ reErrors.referralPlace }}</p>
+              </div>
             </div>
           </div>
 

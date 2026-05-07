@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted } from "vue";
+import { computed, onMounted, reactive, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { useDoctorStore } from "../stores/doctor";
 
@@ -10,6 +10,31 @@ const id = Number(route.params.id);
 
 const finished = computed(() => !!d.detail?.medicalNote?.consultationFinishedAt);
 
+const noteErrors = reactive<Record<string, string>>({});
+function noteErrClass(field: string) {
+  return noteErrors[field] ? "ring-2 ring-red-400 border-red-400 bg-red-50" : "";
+}
+
+function scrollToFirstNoteError() {
+  const first = Object.keys(noteErrors)[0];
+  if (!first) return;
+  const el = document.getElementById(`doctor-field-${first}`);
+  if (el) {
+    el.scrollIntoView({ behavior: "smooth", block: "center" });
+    (el.querySelector("input,select,textarea") as HTMLElement | null)?.focus();
+  }
+}
+
+watch(() => d.note.padecimientoActual, () => delete noteErrors.padecimientoActual);
+watch(() => d.note.antecedentes, () => delete noteErrors.antecedentes);
+watch(() => d.note.exploracionFisica, () => delete noteErrors.exploracionFisica);
+watch(() => d.note.estudiosParaclinicos, () => delete noteErrors.estudiosParaclinicos);
+watch(() => d.note.diagnostico, () => delete noteErrors.diagnostico);
+watch(() => d.note.planTratamiento, () => delete noteErrors.planTratamiento);
+watch(() => d.note.pronostico, () => delete noteErrors.pronostico);
+watch(() => d.note.contraRefWhen, () => delete noteErrors.contraRefWhen);
+watch(() => d.note.contraRefFollowUp, (v) => { if (!v) delete noteErrors.contraRefWhen; });
+
 function fmt(iso: string) {
   const dt = new Date(iso);
   return new Intl.DateTimeFormat("es-MX", {
@@ -19,16 +44,64 @@ function fmt(iso: string) {
   }).format(dt);
 }
 
+// Solo valida la condicional de contrarreferencia (permite guardar borradores)
+function validateForSave(): boolean {
+  for (const k of Object.keys(noteErrors)) delete noteErrors[k];
+  if (d.note.contraRefFollowUp && !String(d.note.contraRefWhen ?? "").trim()) {
+    noteErrors.contraRefWhen = "Especificar el plazo (ej. 48 hrs)";
+  }
+  return Object.keys(noteErrors).length === 0;
+}
+
+// Antes de finalizar, todos los campos clinicos deben estar llenos
+function validateForFinish(): boolean {
+  for (const k of Object.keys(noteErrors)) delete noteErrors[k];
+
+  const required: Array<[string, string, string]> = [
+    ["padecimientoActual", String(d.note.padecimientoActual ?? ""), "Padecimiento actual obligatorio"],
+    ["antecedentes", String(d.note.antecedentes ?? ""), "Antecedentes obligatorios"],
+    ["exploracionFisica", String(d.note.exploracionFisica ?? ""), "Exploracion fisica obligatoria"],
+    ["estudiosParaclinicos", String(d.note.estudiosParaclinicos ?? ""), "Estudios paraclinicos obligatorios"],
+    ["diagnostico", String(d.note.diagnostico ?? ""), "Diagnostico obligatorio"],
+    ["planTratamiento", String(d.note.planTratamiento ?? ""), "Plan / tratamiento obligatorio"],
+    ["pronostico", String(d.note.pronostico ?? ""), "Pronostico obligatorio"],
+  ];
+  for (const [field, value, msg] of required) {
+    if (!value.trim()) noteErrors[field] = msg;
+  }
+  if (d.note.contraRefFollowUp && !String(d.note.contraRefWhen ?? "").trim()) {
+    noteErrors.contraRefWhen = "Especificar el plazo (ej. 48 hrs)";
+  }
+  return Object.keys(noteErrors).length === 0;
+}
+
 async function save() {
-  await d.save(id);
-  alert("✅ Nota guardada");
+  if (!validateForSave()) {
+    setTimeout(scrollToFirstNoteError, 50);
+    return;
+  }
+  try {
+    await d.save(id);
+    alert("✅ Nota guardada");
+  } catch (e: any) {
+    alert(`Error al guardar: ${e?.response?.data?.error || e.message || "Desconocido"}`);
+  }
 }
 
 async function finish() {
+  if (!validateForFinish()) {
+    setTimeout(scrollToFirstNoteError, 50);
+    return;
+  }
   if (!confirm("¿Finalizar consulta? Después quedará solo lectura.")) return;
-  await d.finish(id);
-  alert("✅ Consulta finalizada");
-  router.push("/doctor");
+  try {
+    await d.save(id);
+    await d.finish(id);
+    alert("✅ Consulta finalizada");
+    router.push("/doctor");
+  } catch (e: any) {
+    alert(`Error: ${e?.response?.data?.error || e.message || "Desconocido"}`);
+  }
 }
 
 function close() {
@@ -149,29 +222,35 @@ onMounted(async () => {
     <div class="card p-6 mb-4">
       <p class="section-label">Nota médica</p>
       <div class="grid grid-cols-2 gap-4">
-        <div>
-          <label class="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1.5">Padecimiento actual</label>
-          <textarea v-model="d.note.padecimientoActual" :disabled="finished" class="input-base resize-none disabled:bg-gray-50 disabled:text-gray-500" rows="4" placeholder="Describa el padecimiento actual..." />
+        <div id="doctor-field-padecimientoActual">
+          <label class="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1.5">Padecimiento actual <span class="text-red-500">*</span></label>
+          <textarea v-model="d.note.padecimientoActual" :disabled="finished" :class="['input-base resize-none disabled:bg-gray-50 disabled:text-gray-500', noteErrClass('padecimientoActual')]" rows="4" placeholder="Describa el padecimiento actual..." />
+          <p v-if="noteErrors.padecimientoActual" class="text-xs text-red-600 mt-1">{{ noteErrors.padecimientoActual }}</p>
         </div>
-        <div>
-          <label class="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1.5">Antecedentes</label>
-          <textarea v-model="d.note.antecedentes" :disabled="finished" class="input-base resize-none disabled:bg-gray-50 disabled:text-gray-500" rows="4" placeholder="Antecedentes relevantes..." />
+        <div id="doctor-field-antecedentes">
+          <label class="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1.5">Antecedentes <span class="text-red-500">*</span></label>
+          <textarea v-model="d.note.antecedentes" :disabled="finished" :class="['input-base resize-none disabled:bg-gray-50 disabled:text-gray-500', noteErrClass('antecedentes')]" rows="4" placeholder="Antecedentes relevantes..." />
+          <p v-if="noteErrors.antecedentes" class="text-xs text-red-600 mt-1">{{ noteErrors.antecedentes }}</p>
         </div>
-        <div>
-          <label class="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1.5">Exploración física</label>
-          <textarea v-model="d.note.exploracionFisica" :disabled="finished" class="input-base resize-none disabled:bg-gray-50 disabled:text-gray-500" rows="4" placeholder="Hallazgos de exploración..." />
+        <div id="doctor-field-exploracionFisica">
+          <label class="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1.5">Exploración física <span class="text-red-500">*</span></label>
+          <textarea v-model="d.note.exploracionFisica" :disabled="finished" :class="['input-base resize-none disabled:bg-gray-50 disabled:text-gray-500', noteErrClass('exploracionFisica')]" rows="4" placeholder="Hallazgos de exploración..." />
+          <p v-if="noteErrors.exploracionFisica" class="text-xs text-red-600 mt-1">{{ noteErrors.exploracionFisica }}</p>
         </div>
-        <div>
-          <label class="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1.5">Estudios paraclínicos</label>
-          <textarea v-model="d.note.estudiosParaclinicos" :disabled="finished" class="input-base resize-none disabled:bg-gray-50 disabled:text-gray-500" rows="4" placeholder="Estudios de laboratorio, imagen..." />
+        <div id="doctor-field-estudiosParaclinicos">
+          <label class="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1.5">Estudios paraclínicos <span class="text-red-500">*</span></label>
+          <textarea v-model="d.note.estudiosParaclinicos" :disabled="finished" :class="['input-base resize-none disabled:bg-gray-50 disabled:text-gray-500', noteErrClass('estudiosParaclinicos')]" rows="4" placeholder="Estudios de laboratorio, imagen..." />
+          <p v-if="noteErrors.estudiosParaclinicos" class="text-xs text-red-600 mt-1">{{ noteErrors.estudiosParaclinicos }}</p>
         </div>
-        <div>
-          <label class="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1.5">Diagnóstico(s)</label>
-          <textarea v-model="d.note.diagnostico" :disabled="finished" class="input-base resize-none disabled:bg-gray-50 disabled:text-gray-500" rows="4" placeholder="Diagnóstico principal y secundarios..." />
+        <div id="doctor-field-diagnostico">
+          <label class="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1.5">Diagnóstico(s) <span class="text-red-500">*</span></label>
+          <textarea v-model="d.note.diagnostico" :disabled="finished" :class="['input-base resize-none disabled:bg-gray-50 disabled:text-gray-500', noteErrClass('diagnostico')]" rows="4" placeholder="Diagnóstico principal y secundarios..." />
+          <p v-if="noteErrors.diagnostico" class="text-xs text-red-600 mt-1">{{ noteErrors.diagnostico }}</p>
         </div>
-        <div>
-          <label class="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1.5">Plan / Tratamiento</label>
-          <textarea v-model="d.note.planTratamiento" :disabled="finished" class="input-base resize-none disabled:bg-gray-50 disabled:text-gray-500" rows="4" placeholder="Indicaciones y tratamiento..." />
+        <div id="doctor-field-planTratamiento">
+          <label class="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1.5">Plan / Tratamiento <span class="text-red-500">*</span></label>
+          <textarea v-model="d.note.planTratamiento" :disabled="finished" :class="['input-base resize-none disabled:bg-gray-50 disabled:text-gray-500', noteErrClass('planTratamiento')]" rows="4" placeholder="Indicaciones y tratamiento..." />
+          <p v-if="noteErrors.planTratamiento" class="text-xs text-red-600 mt-1">{{ noteErrors.planTratamiento }}</p>
         </div>
       </div>
     </div>
@@ -203,22 +282,30 @@ onMounted(async () => {
           <span class="text-sm text-gray-700">Sí, requiere seguimiento</span>
         </label>
 
-        <input
-            v-if="d.note.contraRefFollowUp"
-            v-model="d.note.contraRefWhen"
-            :disabled="finished"
-            placeholder="¿En cuánto tiempo?"
-            class="input-base mb-4 disabled:bg-gray-50"
-        />
+        <template v-if="d.note.contraRefFollowUp">
+          <div id="doctor-field-contraRefWhen">
+            <input
+                v-model="d.note.contraRefWhen"
+                :disabled="finished"
+                placeholder="¿En cuánto tiempo? (ej. 48 hrs) *"
+                :class="['input-base mb-1 disabled:bg-gray-50', noteErrClass('contraRefWhen')]"
+            />
+            <p v-if="noteErrors.contraRefWhen" class="text-xs text-red-600 mb-3">{{ noteErrors.contraRefWhen }}</p>
+            <div v-else class="mb-4"></div>
+          </div>
+        </template>
 
-        <p class="section-label">Pronóstico</p>
-        <textarea
-            v-model="d.note.pronostico"
-            :disabled="finished"
-            class="input-base resize-none disabled:bg-gray-50 disabled:text-gray-500"
-            rows="3"
-            placeholder="Pronóstico del paciente..."
-        />
+        <p class="section-label">Pronóstico <span class="text-red-500">*</span></p>
+        <div id="doctor-field-pronostico">
+          <textarea
+              v-model="d.note.pronostico"
+              :disabled="finished"
+              :class="['input-base resize-none disabled:bg-gray-50 disabled:text-gray-500', noteErrClass('pronostico')]"
+              rows="3"
+              placeholder="Pronóstico del paciente..."
+          />
+          <p v-if="noteErrors.pronostico" class="text-xs text-red-600 mt-1">{{ noteErrors.pronostico }}</p>
+        </div>
       </div>
     </div>
 

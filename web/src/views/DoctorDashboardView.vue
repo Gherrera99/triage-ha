@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, onBeforeUnmount, ref } from "vue";
+import { onMounted, onBeforeUnmount, ref, computed } from "vue";
 import { useRouter } from "vue-router";
 import { useDoctorStore } from "../stores/doctor";
 import { startKeepAlive, stopKeepAlive } from "../services/speechAlert";
@@ -45,6 +45,22 @@ function fmt(iso: string) {
     year: "numeric", month: "2-digit", day: "2-digit",
     hour: "2-digit", minute: "2-digit",
   }).format(dt);
+}
+
+const attendedTotalPages = computed(() =>
+    Math.max(1, Math.ceil(d.attendedTotal / d.attendedPageSize))
+);
+
+let attendedSearchTimer: ReturnType<typeof setTimeout> | null = null;
+function onAttendedQueryInput() {
+  if (attendedSearchTimer) clearTimeout(attendedSearchTimer);
+  attendedSearchTimer = setTimeout(() => d.applyAttendedFilters(), 350);
+}
+
+function truncate(s: string | null | undefined, n: number) {
+  const t = String(s ?? "").trim();
+  if (!t) return "";
+  return t.length > n ? t.slice(0, n).trimEnd() + "…" : t;
 }
 
 function colorBg(c: string) {
@@ -223,19 +239,105 @@ onBeforeUnmount(() => {
 
     <!-- ATENDIDO -->
     <template v-else-if="d.tab==='ATTENDED'">
+      <!-- Barra de filtros -->
+      <div class="card p-4 mb-4">
+        <div class="grid grid-cols-1 md:grid-cols-12 gap-3 items-end">
+          <div class="md:col-span-5">
+            <label class="block text-xs font-medium text-gray-600 mb-1">Buscar por nombre o expediente</label>
+            <input
+                v-model="d.attendedQuery"
+                @input="onAttendedQueryInput"
+                class="input-base"
+                type="text"
+                placeholder="Ej. María López o EXP-1234"
+            />
+          </div>
+          <div class="md:col-span-3">
+            <label class="block text-xs font-medium text-gray-600 mb-1">Atendido desde</label>
+            <input
+                v-model="d.attendedDateFrom"
+                @change="d.applyAttendedFilters()"
+                class="input-base"
+                type="date"
+            />
+          </div>
+          <div class="md:col-span-3">
+            <label class="block text-xs font-medium text-gray-600 mb-1">Atendido hasta</label>
+            <input
+                v-model="d.attendedDateTo"
+                @change="d.applyAttendedFilters()"
+                class="input-base"
+                type="date"
+            />
+          </div>
+          <div class="md:col-span-1 flex justify-end">
+            <button
+                class="btn-secondary text-xs py-2 px-3 w-full"
+                title="Limpiar filtros"
+                @click="d.resetAttendedFilters()"
+            >
+              Limpiar
+            </button>
+          </div>
+        </div>
+        <div class="mt-2 text-xs text-gray-500">
+          <span v-if="d.attendedLoading">Cargando…</span>
+          <span v-else>
+            {{ d.attendedTotal }} {{ d.attendedTotal === 1 ? 'paciente atendido' : 'pacientes atendidos' }}
+            <span v-if="d.attendedQuery || d.attendedDateFrom || d.attendedDateTo"> (filtrados)</span>
+          </span>
+        </div>
+      </div>
+
       <div class="space-y-3">
         <div v-for="r in d.attended" :key="r.id" class="card border-l-4 border-l-emerald-400 p-5">
-          <div class="flex items-center justify-between gap-4">
-            <div>
-              <div class="flex items-center gap-2 mb-1">
-                <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 text-emerald-500" viewBox="0 0 20 20" fill="currentColor">
+          <div class="flex items-start justify-between gap-4">
+            <div class="flex-1 min-w-0">
+              <div class="flex items-center flex-wrap gap-2 mb-1.5">
+                <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 text-emerald-500 shrink-0" viewBox="0 0 20 20" fill="currentColor">
                   <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"/>
                 </svg>
                 <span class="font-bold text-gray-800">{{ r.patient.fullName }}</span>
+                <span :class="badgeClass(r.classification)">{{ r.classification }}</span>
+                <span v-if="r.patient.expediente" class="text-xs px-2 py-0.5 rounded-full bg-gray-100 text-gray-700 font-medium">
+                  Exp: {{ r.patient.expediente }}
+                </span>
               </div>
-              <div class="text-sm text-gray-500">Triage: {{ fmt(r.triageAt) }}</div>
+
+              <div class="grid grid-cols-1 md:grid-cols-3 gap-x-4 gap-y-1 text-sm text-gray-600">
+                <div>
+                  <span class="text-gray-400">Edad:</span>
+                  <span class="font-medium ml-1">{{ r.patient.age ?? "—" }}</span>
+                  <span class="mx-1.5 text-gray-300">·</span>
+                  <span class="text-gray-400">Sexo:</span>
+                  <span class="font-medium ml-1">{{ r.patient.sex ?? "—" }}</span>
+                </div>
+                <div>
+                  <span class="text-gray-400">Motivo:</span>
+                  <span class="font-medium ml-1">{{ r.motivoUrgencia }}</span>
+                </div>
+                <div>
+                  <span class="text-gray-400">Atendido:</span>
+                  <span class="font-medium ml-1">
+                    {{ r.medicalNote?.consultationFinishedAt ? fmt(r.medicalNote.consultationFinishedAt) : "—" }}
+                  </span>
+                </div>
+              </div>
+
+              <div v-if="r.medicalNote?.diagnostico" class="mt-2 text-sm text-gray-700">
+                <span class="text-gray-400">Diagnóstico:</span>
+                <span class="ml-1">{{ truncate(r.medicalNote.diagnostico, 180) }}</span>
+              </div>
+
+              <div class="mt-1 text-xs text-gray-400">
+                Triage: {{ fmt(r.triageAt) }}
+                <span v-if="r.nurse?.name">
+                  <span class="mx-1.5">·</span>Enfermero: {{ r.nurse.name }}
+                </span>
+              </div>
             </div>
-            <button class="btn-secondary" @click="d.openPdf(r.id)">
+
+            <button class="btn-secondary shrink-0" @click="d.openPdf(r.id)">
               <span class="flex items-center gap-1.5">
                 <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
                   <path stroke-linecap="round" stroke-linejoin="round" d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z"/>
@@ -246,8 +348,34 @@ onBeforeUnmount(() => {
           </div>
         </div>
 
-        <div v-if="!d.attended.length" class="card p-12 text-center text-gray-400">
-          <p class="text-sm">Aún no tienes pacientes atendidos</p>
+        <div v-if="!d.attended.length && !d.attendedLoading" class="card p-12 text-center text-gray-400">
+          <p class="text-sm">
+            <span v-if="d.attendedQuery || d.attendedDateFrom || d.attendedDateTo">
+              No se encontraron pacientes con los filtros actuales
+            </span>
+            <span v-else>Aún no tienes pacientes atendidos</span>
+          </p>
+        </div>
+
+        <!-- Paginador -->
+        <div v-if="d.attendedTotal > d.attendedPageSize" class="flex items-center justify-between gap-2 pt-2">
+          <button
+              class="btn-secondary text-xs py-1.5"
+              :disabled="d.attendedPage <= 1 || d.attendedLoading"
+              @click="d.setAttendedPage(d.attendedPage - 1)"
+          >
+            ← Anterior
+          </button>
+          <div class="text-xs text-gray-500">
+            Página {{ d.attendedPage }} de {{ attendedTotalPages }}
+          </div>
+          <button
+              class="btn-secondary text-xs py-1.5"
+              :disabled="d.attendedPage >= attendedTotalPages || d.attendedLoading"
+              @click="d.setAttendedPage(d.attendedPage + 1)"
+          >
+            Siguiente →
+          </button>
         </div>
       </div>
     </template>

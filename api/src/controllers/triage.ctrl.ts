@@ -30,6 +30,15 @@ function worstColor(a: TriageColor, b: TriageColor, c: TriageColor): TriageColor
     return [a, b, c].sort((x, y) => rank[x] - rank[y])[2];
 }
 
+// Validacion: numero finito con maximo 3 decimales (ej. 56.500 OK, 56.5001 NO)
+function isValidVitalNumber(v: any): boolean {
+    if (v === null || v === undefined || v === "") return false;
+    const n = Number(v);
+    if (!Number.isFinite(n)) return false;
+    // Tolerancia para errores de coma flotante
+    return Math.abs(n - Math.round(n * 1000) / 1000) < 1e-9;
+}
+
 function last24HoursRange() {
     const end = new Date();
     const start = new Date(end.getTime() - 24 * 60 * 60 * 1000);
@@ -142,6 +151,48 @@ export async function createTriage(req: Request, res: Response) {
             consulta && hasReferral && typeof referralPlaceRaw === "string" && referralPlaceRaw.trim()
                 ? referralPlaceRaw.trim()
                 : null;
+
+        // ============== Validaciones obligatorias ==============
+        const errors: string[] = [];
+
+        if (!birthDate || Number.isNaN(birthDate.getTime())) {
+            errors.push("Fecha de nacimiento es obligatoria");
+        }
+        if (!patientCreate.responsibleName) {
+            errors.push("Nombre del responsable es obligatorio");
+        }
+
+        if (consulta) {
+            const vitalChecks: Array<[string, any]> = [
+                ["Peso", b.weightKg],
+                ["Talla", b.heightCm],
+                ["Temperatura", b.temperatureC],
+                ["Frecuencia cardiaca", b.heartRate],
+                ["Frecuencia respiratoria", b.respiratoryRate],
+            ];
+            for (const [label, val] of vitalChecks) {
+                if (val === null || val === undefined || val === "") {
+                    errors.push(`${label} es obligatorio para motivo CONSULTA`);
+                } else if (!isValidVitalNumber(val)) {
+                    errors.push(`${label} invalido (maximo 3 decimales)`);
+                }
+            }
+            if (typeof b.bloodPressure !== "string" || !b.bloodPressure.trim()) {
+                errors.push("Presion arterial (T.A.) es obligatoria para motivo CONSULTA");
+            }
+
+            if (hadPriorCareSamePathology && !priorCarePlace) {
+                errors.push("Debe especificar el lugar de atencion previa");
+            }
+            if (hasReferral && !referralPlace) {
+                errors.push("Debe especificar el lugar de referencia");
+            }
+        }
+
+        if (errors.length) {
+            return res.status(400).json({ error: errors.join("; ") });
+        }
+        // =======================================================
 
         const created = await prisma.triageRecord.create({
             data: {
@@ -290,6 +341,30 @@ export async function revalueTriage(req: Request, res: Response) {
             ? b.referralPlace.trim()
             : (hasReferral ? existing.referralPlace : null);
 
+    // Validaciones: si llegan vitales en el body, deben tener <=3 decimales
+    const vitalErrors: string[] = [];
+    const vitalChecks: Array<[string, any]> = [
+        ["Peso", b.weightKg],
+        ["Talla", b.heightCm],
+        ["Temperatura", b.temperatureC],
+        ["Frecuencia cardiaca", b.heartRate],
+        ["Frecuencia respiratoria", b.respiratoryRate],
+    ];
+    for (const [label, val] of vitalChecks) {
+        if (val !== undefined && val !== null && val !== "" && !isValidVitalNumber(val)) {
+            vitalErrors.push(`${label} invalido (maximo 3 decimales)`);
+        }
+    }
+    if (hadPriorCareSamePathology && !priorCarePlace && !existing.priorCarePlace) {
+        vitalErrors.push("Debe especificar el lugar de atencion previa");
+    }
+    if (hasReferral && !referralPlace && !existing.referralPlace) {
+        vitalErrors.push("Debe especificar el lugar de referencia");
+    }
+    if (vitalErrors.length) {
+        return res.status(400).json({ error: vitalErrors.join("; ") });
+    }
+
     const updated = await prisma.triageRecord.update({
         where: { id },
         data: {
@@ -376,26 +451,64 @@ export async function listMyConsultations(req: Request, res: Response) {
 export async function listMyAttended(req: Request, res: Response) {
     const doctor = req.user;
     if (!doctor) return res.status(401).json({ error: "No autenticado" });
-    const { start, end } = last24HoursRange();
 
-    const rows = await prisma.triageRecord.findMany({
-        where: {
-            triageAt: { gte: start, lte: end },
-            motivoUrgencia: "CONSULTA",
-            paidStatus: "PAID",
-            medicalNote: {
-                is: {
-                    doctorId: doctor.id,
-                    consultationFinishedAt: { not: null },
-                },
-            },
-        },
-        orderBy: [{ triageAt: "desc" }],
-        include: { patient: true, nurse: { select: { name: true } }, medicalNote: true },
-        take: 300,
-    });
+    const pageRaw = Number(req.query.page);
+    const pageSizeRaw = Number(req.query.pageSize);
+    const page = Number.isFinite(pageRaw) && pageRaw > 0 ? Math.floor(pageRaw) : 1;
+    const pageSize = Number.isFinite(pageSizeRaw) && pageSizeRaw > 0 && pageSizeRaw <= 100
+        ? Math.floor(pageSizeRaw)
+        : 20;
 
-    res.json(rows);
+    const q = String(req.query.q ?? "").trim();
+    const dateFrom = String(req.query.dateFrom ?? "").trim();
+    const dateTo = String(req.query.dateTo ?? "").trim();
+
+    const finishedAtFilter: { gte?: Date; lte?: Date } = {};
+    if (dateFrom) {
+        const d = new Date(`${dateFrom}T00:00:00-06:00`);
+        if (!Number.isNaN(d.getTime())) finishedAtFilter.gte = d;
+    }
+    if (dateTo) {
+        const d = new Date(`${dateTo}T23:59:59-06:00`);
+        if (!Number.isNaN(d.getTime())) finishedAtFilter.lte = d;
+    }
+
+    const noteFilter: any = {
+        doctorId: doctor.id,
+        consultationFinishedAt: { not: null },
+    };
+    if (finishedAtFilter.gte || finishedAtFilter.lte) {
+        noteFilter.consultationFinishedAt = { not: null, ...finishedAtFilter };
+    }
+
+    const patientFilter: any = q
+        ? {
+              OR: [
+                  { fullName: { contains: q } },
+                  { expediente: { contains: normalizeExpediente(q) } },
+              ],
+          }
+        : undefined;
+
+    const where: any = {
+        motivoUrgencia: "CONSULTA",
+        paidStatus: "PAID",
+        medicalNote: { is: noteFilter },
+    };
+    if (patientFilter) where.patient = { is: patientFilter };
+
+    const [total, rows] = await prisma.$transaction([
+        prisma.triageRecord.count({ where }),
+        prisma.triageRecord.findMany({
+            where,
+            orderBy: [{ medicalNote: { consultationFinishedAt: "desc" } }],
+            include: { patient: true, nurse: { select: { name: true } }, medicalNote: true },
+            skip: (page - 1) * pageSize,
+            take: pageSize,
+        }),
+    ]);
+
+    res.json({ rows, total, page, pageSize });
 }
 
 // ✅ Pacientes cancelados para el doctor (no-show o no quiso pagar) — 24hrs
